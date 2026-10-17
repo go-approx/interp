@@ -46,10 +46,17 @@ func (b *BSpline) N() int { return len(b.T) - b.K - 1 }
 // interval is closed). x outside [t[k], t[n]] gives k or n-1.
 func findKnotInterval(t []float64, k int, x float64, hint int) int {
 	n := len(t) - k - 1
-	if hint >= k && hint < n && x >= t[hint] && x < t[hint+1] {
-		return hint
-	}
 	lo, hi := k, n
+	if hint >= k && hint < n && x >= t[hint] {
+		if x < t[hint+1] {
+			return hint
+		}
+		// sorted queries: the next interval is the likely one
+		if hint+2 <= n && x < t[hint+2] {
+			return hint + 1
+		}
+		lo = min(hint+1, n-1)
+	}
 	for hi-lo > 1 {
 		mid := int(uint(lo+hi) >> 1)
 		if x >= t[mid] {

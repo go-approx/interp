@@ -69,7 +69,7 @@ func NewInterp1D(x, y []float64, kind Kind, o *Interp1Options) (*Interp1D, error
 		}
 	}
 	xs, ys := x, y
-	if !o.AssumeSorted {
+	if !o.AssumeSorted && !sort.Float64sAreSorted(x) {
 		idx := make([]int, n)
 		for i := range idx {
 			idx[i] = i
@@ -120,47 +120,84 @@ func NewInterp1D(x, y []float64, kind Kind, o *Interp1Options) (*Interp1D, error
 	return f, nil
 }
 
+// bound is the first index i with a[i] >= v (strict false: numpy
+// searchsorted side="left") or a[i] > v (strict true: side="right"), looking
+// near hint first because consecutive queries are usually close.
+func bound(a []float64, v float64, hint int, strict bool) int {
+	n := len(a)
+	before := func(i int) bool {
+		if strict {
+			return a[i] <= v
+		}
+		return a[i] < v
+	}
+	lo, hi := 0, n
+	if hint < n {
+		if before(hint) {
+			if hint+1 == n || !before(hint+1) {
+				return hint + 1
+			}
+			if hint+2 == n || !before(hint+2) {
+				return hint + 2
+			}
+			lo = hint + 3
+		} else {
+			hi = hint
+		}
+	}
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if before(mid) {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
 // searchLeft is numpy.searchsorted(a, v, side="left") with NaN sorted last.
-func searchLeft(a []float64, v float64) int {
+func searchLeft(a []float64, v float64, hint int) int {
 	if math.IsNaN(v) {
 		return len(a)
 	}
-	return sort.SearchFloat64s(a, v)
+	return bound(a, v, hint, false)
 }
 
-func searchRight(a []float64, v float64) int {
+func searchRight(a []float64, v float64, hint int) int {
 	if math.IsNaN(v) {
 		return len(a)
 	}
-	return sort.Search(len(a), func(i int) bool { return a[i] > v })
+	return bound(a, v, hint, true)
 }
 
-// npInterp is numpy.interp for one point with the given left/right values.
-func npInterp(v float64, xp, fp []float64, left, right float64) float64 {
+// npInterp is numpy.interp for one point with the given left/right values;
+// hint is the index found for the previous point, and the new one is returned.
+func npInterp(v float64, xp, fp []float64, left, right float64, hint int) (float64, int) {
 	n := len(xp)
 	if n == 1 { // numpy compares, so a NaN query falls through to the value
 		switch {
 		case v < xp[0]:
-			return left
+			return left, 0
 		case v > xp[0]:
-			return right
+			return right, 0
 		}
-		return fp[0]
+		return fp[0], 0
 	}
 	switch {
 	case math.IsNaN(v):
-		return v
+		return v, hint
 	case v > xp[n-1]:
-		return right
+		return right, hint
 	case v < xp[0]:
-		return left
+		return left, hint
 	}
-	j := sort.Search(n, func(i int) bool { return xp[i] > v }) - 1
+	j := bound(xp, v, hint, true) - 1
 	switch {
 	case j == n-1:
-		return fp[n-1]
+		return fp[n-1], j
 	case xp[j] == v:
-		return fp[j]
+		return fp[j], j
 	}
 	slope := (fp[j+1] - fp[j]) / (xp[j+1] - xp[j])
 	r := math.FMA(slope, v-xp[j], fp[j])
@@ -170,7 +207,7 @@ func npInterp(v float64, xp, fp []float64, left, right float64) float64 {
 			r = fp[j]
 		}
 	}
-	return r
+	return r, j
 }
 
 // Interp is numpy.interp: the piecewise linear interpolant of (xp, fp), with
@@ -179,8 +216,9 @@ func Interp(dst, x, xp, fp []float64, left, right float64) error {
 	if len(xp) == 0 || len(xp) != len(fp) || len(dst) != len(x) {
 		return ErrShape
 	}
+	hint := 0
 	for i, v := range x {
-		dst[i] = npInterp(v, xp, fp, left, right)
+		dst[i], hint = npInterp(v, xp, fp, left, right, hint)
 	}
 	return nil
 }
@@ -195,6 +233,7 @@ func (f *Interp1D) EvalAll(dst, xq []float64) error {
 			}
 		}
 	}
+	hint := 0
 	for i, v := range xq {
 		var r float64
 		switch f.kind {
@@ -202,21 +241,26 @@ func (f *Interp1D) EvalAll(dst, xq []float64) error {
 			if f.extrapolate && n == 1 {
 				r = math.NaN() // scipy: 0/0 in the single segment formula
 			} else if f.extrapolate {
-				idx := min(max(searchLeft(f.x, v), 1), n-1)
+				hint = searchLeft(f.x, v, hint)
+				idx := min(max(hint, 1), n-1)
 				lo, hi := idx-1, idx
 				r = float64((v-f.x[lo])/(f.x[hi]-f.x[lo])*f.y[hi]) +
 					float64((f.x[hi]-v)/(f.x[hi]-f.x[lo])*f.y[lo])
 			} else {
-				r = npInterp(v, f.x, f.y, f.y[0], f.y[n-1])
+				r, hint = npInterp(v, f.x, f.y, f.y[0], f.y[n-1], hint)
 			}
 		case Nearest:
-			r = f.y[min(max(searchLeft(f.bds, v), 0), n-1)]
+			hint = searchLeft(f.bds, v, hint)
+			r = f.y[min(max(hint, 0), n-1)]
 		case NearestUp:
-			r = f.y[min(max(searchRight(f.bds, v), 0), n-1)]
+			hint = searchRight(f.bds, v, hint)
+			r = f.y[min(max(hint, 0), n-1)]
 		case Previous:
-			r = f.y[min(max(searchLeft(f.bds, v), 1), n)-1]
+			hint = searchLeft(f.bds, v, hint)
+			r = f.y[min(max(hint, 1), n)-1]
 		case Next:
-			r = f.y[min(max(searchRight(f.bds, v), 0), n-1)]
+			hint = searchRight(f.bds, v, hint)
+			r = f.y[min(max(hint, 0), n-1)]
 		}
 		if !f.extrapolate {
 			if v < f.x[0] {

@@ -42,12 +42,14 @@ func hermite(x, y, d, dx []float64) *PPoly {
 	m := len(x) - 1
 	c := make([]float64, 4*m)
 	for i := 0; i < m; i++ {
-		slope := (y[i+1] - y[i]) / dx[i]
-		t := ((d[i] + d[i+1]) - float64(2*slope)) / dx[i]
-		c[4*i] = y[i]
-		c[4*i+1] = d[i]
-		c[4*i+2] = (slope-d[i])/dx[i] - t
-		c[4*i+3] = t / dx[i]
+		h := dx[i]
+		slope := (y[i+1] - y[i]) / h
+		t := ((d[i] + d[i+1]) - float64(2*slope)) / h
+		ci := c[4*i : 4*i+4 : 4*i+4]
+		ci[0] = y[i]
+		ci[1] = d[i]
+		ci[2] = (slope-d[i])/h - t
+		ci[3] = t / h
 	}
 	return &PPoly{X: x, K: 4, C: c, Extrap: Extend}
 }

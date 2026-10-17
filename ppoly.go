@@ -91,10 +91,19 @@ func findInterval(x []float64, xv float64, hint int, extrap bool) int {
 	if xv == b {
 		return nx - 2
 	}
-	if xv >= x[hint] && xv < x[hint+1] {
-		return hint
-	}
 	lo, hi := 0, nx-1 // x[lo] <= xv < x[hi]
+	if xv >= x[hint] {
+		if xv < x[hint+1] {
+			return hint
+		}
+		// sorted queries: the next piece is the likely one
+		if xv < x[hint+2] {
+			return hint + 1
+		}
+		lo = hint + 2
+	} else {
+		hi = hint
+	}
 	for hi-lo > 1 {
 		mid := int(uint(lo+hi) >> 1)
 		if xv >= x[mid] {
@@ -154,6 +163,15 @@ func evalPoly1(s float64, c []float64, dx int) float64 {
 
 // evalDirect is evalPoly1 for dx = 0 (the hot path).
 func evalDirect(s float64, c []float64) float64 {
+	if len(c) == 4 { // the cubic case, unrolled with the same rounding
+		z := s
+		res := c[0]
+		res += float64(c[1] * z)
+		z *= s
+		res += float64(c[2] * z)
+		z *= s
+		return res + float64(c[3]*z)
+	}
 	res, z := 0.0, 1.0
 	last := len(c) - 1
 	for kp := 0; kp < last; kp++ {
