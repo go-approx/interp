@@ -181,3 +181,23 @@ func (m *bandLU) solve(b []float64) {
 		}
 	}
 }
+
+// failure is the panic value of must; guard turns it back into an error at
+// the public entry points, so that internal solves that cannot fail for valid
+// input do not clutter every call with an error path.
+type failure struct{ err error }
+
+// must panics with ErrSingular if ok is false.
+func must(ok bool) {
+	if !ok {
+		panic(failure{ErrSingular})
+	}
+}
+
+// guard is deferred by the entry points that call must; it stores the
+// panic's error in *err.
+func guard(err *error) {
+	if r := recover(); r != nil {
+		*err = r.(failure).err
+	}
+}

@@ -43,8 +43,8 @@ func TestShapeFixture(t *testing.T) {
 	}
 	st.report(t, "Pchip/Akima/makima")
 	stX.report(t, "  clustered/tiny span")
-	st.within(t, "Pchip/Akima/makima", 4096, 1e-9)
-	stX.within(t, "shape clustered", 1<<62, 1e-6)
+	st.within(t, "Pchip/Akima/makima", 512, 1e-13)
+	stX.within(t, "shape clustered", 1024, 1e-13)
 }
 
 func interp1Options(num map[string]float64) *Interp1Options {
@@ -95,7 +95,7 @@ func TestInterp1DFixture(t *testing.T) {
 		st.cmp(t, c.Name, sampleIf(c, dst), c.o("y"))
 	}
 	st.report(t, "interp1d / np.interp")
-	st.within(t, "interp1d", 4, 1e-15)
+	st.within(t, "interp1d", 0, 0) // bit-identical to scipy on every value
 }
 
 func bsplineFor(c *Case, x, y []float64) (*BSpline, error) {
@@ -124,7 +124,7 @@ func bsplineFor(c *Case, x, y []float64) (*BSpline, error) {
 
 func TestBSplineFixture(t *testing.T) {
 	fx := loadFixture(t, "bspline")
-	var st, stI, stK Stats
+	var st, stX, stI, stK, stBig, stBigI Stats
 	for i := range fx.Cases {
 		c := &fx.Cases[i]
 		x, y, xq := c.inputs()
@@ -139,9 +139,12 @@ func TestBSplineFixture(t *testing.T) {
 			t.Errorf("%s: %v", c.Name, err)
 			continue
 		}
-		s := &st
+		s, sI := &st, &stI
 		if strings.Contains(c.Name, "clustered") {
 			s = &stX
+		}
+		if c.Num["big"] == 1 { // 1e5 intervals: antiderivatives and integrals accumulate 1e5 terms
+			s, sI = &stBig, &stBigI
 		}
 		k := b.K
 		big := c.Num["big"] == 1
@@ -175,25 +178,47 @@ func TestBSplineFixture(t *testing.T) {
 		}
 		a := b.Antiderivative(1)
 		a.EvalAll(buf, xq)
-		s.cmpF(t, c.Name+" anti", sampleIf(c, buf), c.o("anti"), c.floor())
-		if !big {
+		wantAnti := c.o("anti")
+		if k == 0 { // scipy's antiderivative of a piecewise constant is degenerate at and beyond the right end
+			for i, v := range xq {
+				if !(v < x[len(x)-1]) {
+					buf[i], wantAnti[i] = 0, 0
+				}
+			}
+		}
+		s.cmpF(t, c.Name+" anti", sampleIf(c, buf), wantAnti, c.floor())
+		if !big && k > 0 {
 			s.cmpF(t, c.Name+" antic", a.C, c.o("antic")[:len(a.C)], c.floor())
 		}
 		lo, hi := x[0], x[len(x)-1]
 		sp := hi - lo
 		ab := []float64{lo + 0.2*sp, lo + 0.9*sp, hi + 0.3*sp, lo - 0.2*sp, lo - sp, lo + 3*sp}
 		got := []float64{b.Integrate(ab[0], ab[1]), b.Integrate(ab[2], ab[3]), b.Integrate(ab[4], ab[5])}
-		stI.cmpF(t, c.Name+" int", got, c.o("int"), c.floor())
+		wantInt := c.o("int")
+		if k == 0 { // beyond the right end, as above
+			got, wantInt = got[:1], wantInt[:1]
+		}
+		sI.cmpF(t, c.Name+" int", got, wantInt, c.floor())
 		got = []float64{q.Integrate(ab[0], ab[1]), q.Integrate(ab[2], ab[3]), q.Integrate(ab[4], ab[5])}
-		stI.cmpF(t, c.Name+" intne", got, c.o("intne"), c.floor())
+		want := c.o("intne")
+		if k == 0 { // scipy's splint returns NaN when the clipped interval reaches the end of the knots
+			got, want = got[:1], want[:1]
+		}
+		sI.cmpF(t, c.Name+" intne", got, want, c.floor())
 	}
 	st.report(t, "make_interp_spline")
 	stX.report(t, "  clustered")
 	stK.report(t, "  knots")
 	stI.report(t, "  integrate")
+	stBig.report(t, "  n = 1e5")
+	stBigI.report(t, "  n = 1e5 integrate")
+	st.within(t, "make_interp_spline", 1<<15, 1e-8) // periodic with n <= k is a dense, ill-conditioned system
+	stX.within(t, "make_interp_spline clustered", 16, 1e-14)
+	stK.within(t, "make_interp_spline knots", 0, 0)
+	stI.within(t, "make_interp_spline integrate", 1<<15, 1e-11)
+	stBig.within(t, "make_interp_spline n=1e5", 1<<62, 1e-7)
+	stBigI.within(t, "make_interp_spline n=1e5 integrate", 1<<62, 1e-9)
 }
-
-var stX Stats
 
 func TestLsqFixture(t *testing.T) {
 	fx := loadFixture(t, "lsq")
@@ -220,6 +245,7 @@ func TestLsqFixture(t *testing.T) {
 		st.cmpF(t, c.Name+" y1", sampleIf(c, buf), c.o("y1"), 1e-6*maxAbs(y))
 	}
 	st.report(t, "make_lsq_spline")
+	st.within(t, "make_lsq_spline", 1<<62, 1e-9)
 }
 
 func maxAbs(v []float64) float64 {
@@ -292,6 +318,9 @@ func TestSplrepFixture(t *testing.T) {
 	stKnots.report(t, "  knots")
 	stLegacy.report(t, "  vs splrep (same knots)")
 	t.Logf("make_splrep: %d fits, knot vectors identical %d, different %d; legacy splrep: identical knots in %d of %d", newOK, knotsEq, knotsDiff, legEq, legOK)
+	st.within(t, "make_splrep", 1<<62, 1e-9)
+	stKnots.within(t, "make_splrep knots", 0, 0)
+	stLegacy.within(t, "splrep (same knots)", 1<<62, 1e-10)
 }
 
 // ulpAll is the largest ULP distance between two equally long slices.
@@ -345,10 +374,10 @@ func TestRGIFixture(t *testing.T) {
 		}
 		st.cmpF(t, c.Name+" interpn", got2, c.o("yi"), fl)
 	}
+	budgets := map[string]float64{"linear": 1e-14, "nearest": 0, "slinear": 1e-13, "cubic": 1e-12, "quintic": 1e-11}
 	for _, m := range []string{"linear", "nearest", "slinear", "cubic", "quintic"} {
-		if stats[m] != nil {
-			stats[m].report(t, "RegularGrid "+m)
-		}
+		stats[m].report(t, "RegularGrid "+m)
+		stats[m].within(t, "RegularGrid "+m, 1<<62, budgets[m])
 	}
 }
 
@@ -385,4 +414,5 @@ func TestBicubicFixture(t *testing.T) {
 		st.cmpF(t, c.Name+" grid", grid, c.o("grid"), fl)
 	}
 	st.report(t, "RectBivariateSpline")
+	st.within(t, "RectBivariateSpline", 1<<62, 1e-10)
 }

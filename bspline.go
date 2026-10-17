@@ -58,6 +58,11 @@ func findKnotInterval(t []float64, k int, x float64, hint int) int {
 			hi = mid
 		}
 	}
+	// At the right end the interval must have non-zero width (repeated end
+	// knots, as an antiderivative of a piecewise constant spline has).
+	for k > 0 && lo > k && t[lo] == t[lo+1] {
+		lo--
+	}
 	return lo
 }
 

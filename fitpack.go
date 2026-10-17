@@ -49,18 +49,18 @@ type Smoothing struct {
 	P float64
 }
 
-func getResiduals(x, y, w, t []float64, k int) (res []float64, fp float64, c []float64, ok bool) {
-	c, ok = buildLsq(x, y, w, t, k).solve()
-	if !ok {
-		return nil, 0, nil, false
-	}
-	res, fp = residuals(x, y, w, t, k, c)
-	return res, fp, c, !math.IsNaN(fp)
+// getResiduals solves the least-squares problem on knots t and returns the
+// weighted squared residuals and their sum; it panics (see must) if the
+// problem is singular or the residuals are NaN.
+func getResiduals(x, y, w, t []float64, k int) (res []float64, fp float64) {
+	res, fp = residuals(x, y, w, t, k, solveLsq(buildLsq(x, y, w, t, k)))
+	must(!math.IsNaN(fp))
+	return res, fp
 }
 
 // fpknot is the position for a new knot: the data site in the middle of the
 // knot interval with the largest sum of squared residuals.
-func fpknot(x, t []float64, k int, res []float64) (float64, bool) {
+func fpknot(x, t []float64, k int, res []float64) float64 {
 	interval := k + 1
 	nc := len(t) - k - 1
 	ix := []int{0}
@@ -86,16 +86,16 @@ func fpknot(x, t []float64, k int, res []float64) (float64, bool) {
 			imax, fmax = i, fparts[i]
 		}
 	}
-	if imax < 0 {
-		return 0, false
+	if imax < 0 { // no interval holds two points: split the data in the middle
+		return x[(len(x)-1)/2]
 	}
-	return x[(ix[imax]+ix[imax+1]+1)/2], true
+	return x[(ix[imax]+ix[imax+1]+1)/2]
 }
 
 // generateKnots grows the knot vector until the least-squares spline meets
 // the smoothing condition and returns the final vector (the last one
 // scipy.interpolate.generate_knots yields).
-func generateKnots(x, y, w []float64, xb, xe float64, k int, s float64, nest int) ([]float64, bool) {
+func generateKnots(x, y, w []float64, xb, xe float64, k int, s float64, nest int) []float64 {
 	acc := s * fitTol
 	m := len(x)
 	if nest <= 0 {
@@ -112,18 +112,16 @@ func generateKnots(x, y, w []float64, xb, xe float64, k int, s float64, nest int
 	n := len(t)
 	var fp, fpold float64
 	nplus := 0
-	last := t
-	for iter := 0; iter < m; iter++ {
-		last = append([]float64(nil), t...)
+	// Every pass adds at least one knot and the number of knots is capped at
+	// nmax, so the loop ends.
+	for {
+		last := append([]float64(nil), t...)
 		fpold = fp
-		res, f, _, ok := getResiduals(x, y, w, t, k)
-		if !ok {
-			return nil, false
-		}
-		fp = f
+		var res []float64
+		res, fp = getResiduals(x, y, w, t, k)
 		fpms := fp - s
 		if math.Abs(fpms) < acc || fpms < 0 {
-			return last, true
+			return last
 		}
 		if n == nmin {
 			nplus = 1
@@ -135,30 +133,23 @@ func generateKnots(x, y, w []float64, xb, xe float64, k int, s float64, nest int
 			nplus = min(nplus*2, max(npl1, nplus/2, 1))
 		}
 		for j := 0; j < nplus; j++ {
-			nk, ok := fpknot(x, t, k, res)
-			if !ok {
-				return nil, false
-			}
+			nk := fpknot(x, t, k, res)
 			at := sort.SearchFloat64s(t, nk)
 			t = append(t, 0)
 			copy(t[at+1:], t[at:])
 			t[at] = nk
 			n = len(t)
 			if n >= nmax {
-				return notAKnot(x, k), true
+				return notAKnot(x, k)
 			}
 			if n >= nest {
-				return t, true
+				return t
 			}
 			if j < nplus-1 {
-				res, _, _, ok = getResiduals(x, y, w, t, k)
-				if !ok {
-					return nil, false
-				}
+				res, _ = getResiduals(x, y, w, t, k)
 			}
 		}
 	}
-	return last, true
 }
 
 // discMatrix returns the jumps of the k-th derivative of the B-splines at the
@@ -207,7 +198,8 @@ func fprati(p1, f1, p2, f2, p3, f3 float64) float64 {
 // derivative. s == 0 interpolates (MakeInterpSpline, not-a-knot) and then
 // no W, T or Nest may be given. UnivariateSpline's default smoothing is
 // s = len(x).
-func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (*Smoothing, error) {
+func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (_ *Smoothing, err error) {
+	defer guard(&err)
 	if o == nil {
 		o = &SplrepOptions{}
 	}
@@ -258,21 +250,14 @@ func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (*Smoothing,
 	}
 	t := o.T
 	if t == nil {
-		var ok bool
-		t, ok = generateKnots(x, y, w, xb, xe, k, s, o.Nest)
-		if !ok {
-			return nil, ErrSingular
-		}
+		t = generateKnots(x, y, w, xb, xe, k, s, o.Nest)
 	} else if len(t) < 2*(k+1) || !finiteAll(t) || !sort.Float64sAreSorted(t) {
 		return nil, ErrKnots
 	}
 	nc := len(t) - k - 1
 	q := buildLsq(x, y, w, t, k)
 	if len(t) == 2*(k+1) {
-		c, ok := q.solve()
-		if !ok {
-			return nil, ErrSingular
-		}
+		c := solveLsq(q)
 		_, fp := residuals(x, y, w, t, k, c)
 		return &Smoothing{Spline: &BSpline{T: t, C: c, K: k}, Fp: fp}, nil
 	}
@@ -281,10 +266,7 @@ func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (*Smoothing,
 		diag += q.r[j*q.w]
 	}
 	p := float64(nc) / diag
-	_, fp, _, ok := getResiduals(x, y, w, t, k)
-	if !ok {
-		return nil, ErrSingular
-	}
+	_, fp := getResiduals(x, y, w, t, k)
 	fpinf := fp - s
 	t0 := make([]float64, 0, 2*(k+1))
 	for i := 0; i <= k; i++ {
@@ -293,15 +275,12 @@ func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (*Smoothing,
 	for i := 0; i <= k; i++ {
 		t0 = append(t0, xe)
 	}
-	_, fp0, _, ok := getResiduals(x, y, w, t0, k)
-	if !ok {
-		return nil, ErrSingular
-	}
+	_, fp0 := getResiduals(x, y, w, t0, k)
 	fp0 -= s
 	b := discMatrix(t, k)
 	var cur []float64
 	var curFp float64
-	f := func(p float64) (float64, bool) {
+	f := func(p float64) float64 {
 		qq := q.clone()
 		for jj, row := range b {
 			r := make([]float64, len(row))
@@ -310,19 +289,13 @@ func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (*Smoothing,
 			}
 			qq.addRow(jj, r, 0)
 		}
-		c, ok := qq.solve()
-		if !ok {
-			return 0, false
-		}
+		c := solveLsq(qq)
 		_, fp := residuals(x, y, w, t, k, c)
 		cur, curFp = c, fp
-		return fp - s, true
+		return fp - s
 	}
 	acc := s * fitTol
-	ier, pf, ok := rootRati(f, p, [2]float64{0, fp0}, [2]float64{math.Inf(1), fpinf}, acc)
-	if !ok {
-		return nil, ErrSingular
-	}
+	ier, pf := rootRati(f, p, [2]float64{0, fp0}, [2]float64{math.Inf(1), fpinf}, acc)
 	return &Smoothing{Spline: &BSpline{T: t, C: cur, K: k}, Fp: curFp, Ier: ier, P: pf}, nil
 }
 
@@ -338,7 +311,7 @@ func ones(n int) []float64 {
 // interpolation r(p) = (u*p+v)/(p+w), starting from p0 inside the bracket
 // (p1, f1), (p3, f3). It returns FITPACK's status, the last p and false if f
 // itself failed.
-func rootRati(f func(float64) (float64, bool), p0 float64, lo, hi [2]float64, acc float64) (int, float64, bool) {
+func rootRati(f func(float64) float64, p0 float64, lo, hi [2]float64, acc float64) (int, float64) {
 	const con1, con9, con4 = 0.1, 0.9, 0.04
 	ich1, ich3 := 0, 0
 	p1, f1 := lo[0], lo[1]
@@ -346,15 +319,12 @@ func rootRati(f func(float64) (float64, bool), p0 float64, lo, hi [2]float64, ac
 	p := p0
 	for it := 0; it < fitMaxIt; it++ {
 		p2 := p
-		f2, ok := f(p)
-		if !ok {
-			return 0, p, false
-		}
+		f2 := f(p)
 		if math.IsNaN(f2) {
-			return 1, p, true
+			return 1, p
 		}
 		if math.Abs(f2) < acc {
-			return 0, p, true
+			return 0, p
 		}
 		if ich3 == 0 {
 			if f2-f3 <= acc {
@@ -383,7 +353,7 @@ func rootRati(f func(float64) (float64, bool), p0 float64, lo, hi [2]float64, ac
 			}
 		}
 		if f1 <= f2 || f2 <= f3 {
-			return 2, p, true
+			return 2, p
 		}
 		p = fprati(p1, f1, p2, f2, p3, f3)
 		if f2 < 0 {
@@ -392,5 +362,5 @@ func rootRati(f func(float64) (float64, bool), p0 float64, lo, hi [2]float64, ac
 			p1, f1 = p2, f2
 		}
 	}
-	return 3, p, true
+	return 3, p
 }

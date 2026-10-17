@@ -91,9 +91,6 @@ func findInterval(x []float64, xv float64, hint int, extrap bool) int {
 	if xv == b {
 		return nx - 2
 	}
-	if hint < 0 || hint >= nx-1 {
-		hint = 0
-	}
 	if xv >= x[hint] && xv < x[hint+1] {
 		return hint
 	}

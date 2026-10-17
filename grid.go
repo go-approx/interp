@@ -54,7 +54,8 @@ func checkGrid(axes [][]float64, values []float64) ([]int, error) {
 // knots (scipy make_ndbspl; scipy solves the one big system iteratively, this
 // solves one banded system per axis, which gives the same interpolant). A
 // single degree may be given for all axes.
-func MakeNdInterp(axes [][]float64, values []float64, k ...int) (*NdBSpline, error) {
+func MakeNdInterp(axes [][]float64, values []float64, k ...int) (_ *NdBSpline, err error) {
+	defer guard(&err)
 	shape, err := checkGrid(axes, values)
 	if err != nil {
 		return nil, err
@@ -99,9 +100,7 @@ func MakeNdInterp(axes [][]float64, values []float64, k ...int) (*NdBSpline, err
 				m.set(i, ell-k+a, h[a])
 			}
 		}
-		if !m.factor() {
-			return nil, ErrSingular
-		}
+		must(m.factor())
 		line := make([]float64, n)
 		outer := len(c) / (n * strides[d])
 		for o := 0; o < outer; o++ {

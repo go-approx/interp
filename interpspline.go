@@ -111,7 +111,8 @@ func checkXY(x, y []float64) error {
 // scipy.interpolate.make_interp_spline for one dependent variable. x must be
 // strictly increasing and finite. The default knots are the not-a-knot ones
 // (k = 3 gives the cubic not-a-knot spline).
-func MakeInterpSpline(x, y []float64, k int, o *SplineOptions) (*BSpline, error) {
+func MakeInterpSpline(x, y []float64, k int, o *SplineOptions) (_ *BSpline, err error) {
+	defer guard(&err)
 	if o == nil {
 		o = &SplineOptions{}
 	}
@@ -170,11 +171,7 @@ func MakeInterpSpline(x, y []float64, k int, o *SplineOptions) (*BSpline, error)
 		return nil, ErrKnots
 	}
 	if o.Periodic {
-		c, err := makePeriodic(x, y, t, k)
-		if err != nil {
-			return nil, err
-		}
-		return &BSpline{T: t, C: c, K: k, Extrap: Wrap}, nil
+		return &BSpline{T: t, C: makePeriodic(x, y, t, k), K: k, Extrap: Wrap}, nil
 	}
 	nt := len(t) - k - 1
 	nl, nr := len(o.Left), len(o.Right)
@@ -201,34 +198,30 @@ func MakeInterpSpline(x, y []float64, k int, o *SplineOptions) (*BSpline, error)
 		return true
 	}
 	rhs := make([]float64, nt)
+	inBand := true
 	for i, d := range o.Left {
-		if !put(i, x[0], d.Order) {
-			return nil, ErrBC
-		}
+		inBand = put(i, x[0], d.Order) && inBand
 		rhs[i] = d.Value
 	}
 	for i := range x {
-		if !put(nl+i, x[i], 0) {
-			return nil, ErrBC
-		}
+		inBand = put(nl+i, x[i], 0) && inBand
 		rhs[nl+i] = y[i]
 	}
 	for i, d := range o.Right {
-		if !put(nt-nr+i, x[n-1], d.Order) {
-			return nil, ErrBC
-		}
+		inBand = put(nt-nr+i, x[n-1], d.Order) && inBand
 		rhs[nt-nr+i] = d.Value
 	}
-	if !m.factor() {
-		return nil, ErrSingular
+	if !inBand {
+		return nil, ErrBC
 	}
+	must(m.factor())
 	m.solve(rhs)
 	return &BSpline{T: t, C: rhs, K: k, Extrap: Extend}, nil
 }
 
 // makePeriodic solves for the coefficients of the periodic interpolating
 // spline on the periodic knots t (scipy _make_periodic_spline).
-func makePeriodic(x, y, t []float64, k int) ([]float64, error) {
+func makePeriodic(x, y, t []float64, k int) []float64 {
 	n := len(x)
 	if n <= k {
 		return makePeriodicFull(x, y, t, k)
@@ -271,9 +264,7 @@ func makePeriodic(x, y, t []float64, k int) ([]float64, error) {
 			crow = append(crow, i)
 		}
 	}
-	if !m.factor() {
-		return nil, ErrSingular
-	}
+	must(m.factor())
 	b := append([]float64(nil), y[:nn]...)
 	m.solve(b)
 	u := b
@@ -303,9 +294,7 @@ func makePeriodic(x, y, t []float64, k int) ([]float64, error) {
 			}
 			s[p*r+p]++
 		}
-		if !denseSolve(s, g, r) {
-			return nil, ErrSingular
-		}
+		must(denseSolve(s, g, r))
 		u = append([]float64(nil), b...)
 		for q := 0; q < r; q++ {
 			for i := range u {
@@ -317,11 +306,11 @@ func makePeriodic(x, y, t []float64, k int) ([]float64, error) {
 	for j := range c {
 		c[j] = u[((j-kul)%nn+nn)%nn]
 	}
-	return c, nil
+	return c
 }
 
 // makePeriodicFull is the dense solution for n <= k points.
-func makePeriodicFull(x, y, t []float64, k int) ([]float64, error) {
+func makePeriodicFull(x, y, t []float64, k int) []float64 {
 	n := len(x)
 	sz := n + k - 1
 	a := make([]float64, sz*sz)
@@ -346,10 +335,8 @@ func makePeriodicFull(x, y, t []float64, k int) ([]float64, error) {
 	}
 	b := make([]float64, sz)
 	copy(b[k-1:], y)
-	if !denseSolve(a, b, sz) {
-		return nil, ErrSingular
-	}
-	return b, nil
+	must(denseSolve(a, b, sz))
+	return b
 }
 
 // lsq is a banded least-squares problem for B-spline coefficients, reduced
@@ -440,6 +427,13 @@ func (q *lsq) solve() ([]float64, bool) {
 	return c, true
 }
 
+// solveLsq back-substitutes, panicking (see must) if the problem is singular.
+func solveLsq(q *lsq) []float64 {
+	c, ok := q.solve()
+	must(ok)
+	return c
+}
+
 // buildLsq forms and reduces the weighted observation matrix for data
 // (x, y, w) on knots t.
 func buildLsq(x, y, w, t []float64, k int) *lsq {
@@ -485,7 +479,8 @@ func residuals(x, y, w, t []float64, k int, c []float64) ([]float64, float64) {
 // MakeLsqSpline returns the weighted least-squares B-spline of degree k on
 // the knots t (scipy.interpolate.make_lsq_spline). w may be nil (unit
 // weights); x must be non-decreasing and lie in [t[k], t[n]].
-func MakeLsqSpline(x, y, t []float64, k int, w []float64) (*BSpline, error) {
+func MakeLsqSpline(x, y, t []float64, k int, w []float64) (_ *BSpline, err error) {
+	defer guard(&err)
 	m := len(x)
 	if m == 0 || len(y) != m || (w != nil && len(w) != m) || k < 0 || len(t) < 2*k+2 {
 		return nil, ErrShape
@@ -518,9 +513,5 @@ func MakeLsqSpline(x, y, t []float64, k int, w []float64) (*BSpline, error) {
 			return nil, ErrShape
 		}
 	}
-	c, ok := buildLsq(x, y, w, t, k).solve()
-	if !ok {
-		return nil, ErrSingular
-	}
-	return &BSpline{T: t, C: c, K: k, Extrap: Extend}, nil
+	return &BSpline{T: t, C: solveLsq(buildLsq(x, y, w, t, k)), K: k, Extrap: Extend}, nil
 }

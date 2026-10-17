@@ -14,11 +14,11 @@ import (
 // at least 2^-10 of the largest magnitude in its vector ("well-conditioned");
 // the Scaled column covers every entry: |got-want| / max|want| of the vector.
 type Stats struct {
-	N, Exact, Fail int
-	WellN          int
-	MaxULP         uint64
-	MaxRel         float64
-	MaxScaled      float64
+	N, Exact, Fail  int
+	WellN           int
+	MaxULP          uint64
+	MaxRel          float64
+	MaxScaled       float64
 	Worst, WorstULP string
 }
 

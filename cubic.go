@@ -241,7 +241,8 @@ func NewCubicSpline(x, y []float64, bc string) (*PPoly, error) {
 }
 
 // NewCubicSplineBC is NewCubicSpline with a separate condition per end.
-func NewCubicSplineBC(x, y []float64, start, end BC) (*PPoly, error) {
+func NewCubicSplineBC(x, y []float64, start, end BC) (p *PPoly, err error) {
+	defer guard(&err)
 	dx, err := prepare(x, y)
 	if err != nil {
 		return nil, err
@@ -274,19 +275,14 @@ func NewCubicSplineBC(x, y []float64, start, end BC) (*PPoly, error) {
 	case n == 3 && start.Kind == NotAKnot && end.Kind == NotAKnot:
 		a := []float64{1, 1, 0, dx[1], 2 * (dx[0] + dx[1]), dx[0], 0, 1, 1}
 		s = []float64{2 * slope[0], 3 * (float64(dx[0]*slope[1]) + float64(dx[1]*slope[0])), 2 * slope[1]}
-		if !denseSolve(a, s, 3) {
-			return nil, ErrSingular
-		}
+		must(denseSolve(a, s, 3))
 	case n == 3 && start.Kind == Periodic:
 		t := (slope[0]/dx[0] + slope[1]/dx[1]) / (1/dx[0] + 1/dx[1])
 		s = []float64{t, t, t}
 	default:
-		s, err = cubicSlopes(x, y, dx, slope, start, end)
-		if err != nil {
-			return nil, err
-		}
+		s = cubicSlopes(x, y, dx, slope, start, end)
 	}
-	p := hermite(x, y, s, dx)
+	p = hermite(x, y, s, dx)
 	if periodic {
 		p.Extrap = Wrap
 	}
@@ -294,7 +290,7 @@ func NewCubicSplineBC(x, y []float64, start, end BC) (*PPoly, error) {
 }
 
 // cubicSlopes solves the tridiagonal system for the derivative at every node.
-func cubicSlopes(x, y, dx, slope []float64, start, end BC) ([]float64, error) {
+func cubicSlopes(x, y, dx, slope []float64, start, end BC) []float64 {
 	n := len(x)
 	up := make([]float64, n) // up[j] = A[j-1][j]
 	di := make([]float64, n)
@@ -349,15 +345,13 @@ func cubicSlopes(x, y, dx, slope []float64, start, end BC) ([]float64, error) {
 	}
 	dl := lo[:n-1]
 	du := up[1:]
-	if !gtsv(dl, di, du, b) {
-		return nil, ErrSingular
-	}
-	return b, nil
+	must(gtsv(dl, di, du, b))
+	return b
 }
 
 // cubicPeriodic solves the cyclic system by condensing it to a tridiagonal
 // one of order n-2 (scipy CubicSpline, bc_type="periodic").
-func cubicPeriodic(dx, slope, up, di, lo, b []float64) ([]float64, error) {
+func cubicPeriodic(dx, slope, up, di, lo, b []float64) []float64 {
 	n := len(di)
 	nn := n - 2
 	di[0] = 2 * (dx[n-2] + dx[0])
@@ -379,9 +373,8 @@ func cubicPeriodic(dx, slope, up, di, lo, b []float64) ([]float64, error) {
 		du := append([]float64(nil), up[1:nn]...)
 		return gtsv(dl, d, du, rhs)
 	}
-	if !solve(b1) || !solve(b2) {
-		return nil, ErrSingular
-	}
+	must(solve(b1))
+	must(solve(b2))
 	sm1 := ((bLast - float64(aM10*b1[0])) - float64(aM1M2*b1[nn-1])) /
 		((aM1M1 + float64(aM10*b2[0])) + float64(aM1M2*b2[nn-1]))
 	s := make([]float64, n)
@@ -390,5 +383,5 @@ func cubicPeriodic(dx, slope, up, di, lo, b []float64) ([]float64, error) {
 	}
 	s[n-2] = sm1
 	s[n-1] = s[0]
-	return s, nil
+	return s
 }
