@@ -200,7 +200,7 @@ func fprati(p1, f1, p2, f2, p3, f3 float64) float64 {
 	return -(p1*p2*h3 + p2*p3*h1 + p1*p3*h2) / (p1*h1 + p2*h2 + p3*h3)
 }
 
-// MakeSplrep returns the smoothing spline of degree k (>= 1, odd k advised)
+// MakeSplrep returns the smoothing spline of degree k (>= 0, odd k advised)
 // for data (x, y), the FITPACK curfit/splrep problem as replicated by
 // scipy.interpolate.make_splrep: the spline with the fewest knots that
 // satisfies sum((w*(y-g(x)))^2) <= s, minimising the jumps of its k-th
@@ -223,7 +223,7 @@ func MakeSplrep(x, y []float64, k int, s float64, o *SplrepOptions) (*Smoothing,
 		return &Smoothing{Spline: spl, Fp: fp}, nil
 	}
 	m := len(x)
-	if m < k+1 || len(y) != m || k < 1 || s < 0 || (o.W != nil && len(o.W) != m) || (o.T != nil && o.Nest != 0) {
+	if m < k+1 || len(y) != m || k < 0 || s < 0 || (o.W != nil && len(o.W) != m) || (o.T != nil && o.Nest != 0) {
 		return nil, ErrShape
 	}
 	if !finiteAll(x) || !finiteAll(y) || !finiteAll(o.W) || math.IsNaN(s) {

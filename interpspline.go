@@ -370,33 +370,53 @@ func (q *lsq) clone() *lsq {
 	return &lsq{nc: q.nc, k: q.k, w: q.w, r: append([]float64(nil), q.r...), z: append([]float64(nil), q.z...)}
 }
 
-// addRow rotates the row h (columns j0..j0+len(h)-1) with right-hand side yv
-// into the triangle and returns the leftover of yv.
+// addRow rotates the row h (columns j0..j0+len(h)-1, at most w of them) with
+// right-hand side yv into the triangle and returns the leftover of yv.
+// The row slides down the triangle: after the rotation with row j its
+// remaining entries line up with row j+1, and fill-in from the wider rows
+// below keeps it alive until it vanishes (FITPACK fpcurf, SciPy qr_reduce).
 func (q *lsq) addRow(j0 int, h []float64, yv float64) float64 {
-	for ii := 0; ii < len(h); ii++ {
-		piv := h[ii]
-		if piv == 0 {
-			continue
+	w := q.w
+	var win [16]float64
+	hw := win[:0]
+	if w > len(win) {
+		hw = make([]float64, 0, w)
+	}
+	hw = append(hw, h...)
+	for len(hw) < w {
+		hw = append(hw, 0)
+	}
+	for j := j0; j < q.nc; j++ {
+		if piv := hw[0]; piv != 0 {
+			ww := q.r[j*w]
+			var dd float64
+			if store := math.Abs(piv); store >= ww {
+				dd = store * math.Sqrt(1+float64((ww/piv)*(ww/piv)))
+			} else {
+				dd = ww * math.Sqrt(1+float64((piv/ww)*(piv/ww)))
+			}
+			cos, sin := ww/dd, piv/dd
+			q.r[j*w] = dd
+			s1, s2 := yv, q.z[j]
+			q.z[j] = float64(cos*s2) + float64(sin*s1)
+			yv = float64(cos*s1) - float64(sin*s2)
+			for l := 1; l < w; l++ {
+				a, b := hw[l], q.r[j*w+l]
+				q.r[j*w+l] = float64(cos*b) + float64(sin*a)
+				hw[l] = float64(cos*a) - float64(sin*b)
+			}
 		}
-		j := j0 + ii
-		ww := q.r[j*q.w]
-		var dd float64
-		if store := math.Abs(piv); store >= ww {
-			dd = store * math.Sqrt(1+float64((ww/piv)*(ww/piv)))
-		} else {
-			dd = ww * math.Sqrt(1+float64((piv/ww)*(piv/ww)))
+		copy(hw, hw[1:])
+		hw[w-1] = 0
+		live := false
+		for _, v := range hw {
+			if v != 0 {
+				live = true
+				break
+			}
 		}
-		cos, sin := ww/dd, piv/dd
-		q.r[j*q.w] = dd
-		s1, s2 := yv, q.z[j]
-		q.z[j] = float64(cos*s2) + float64(sin*s1)
-		yv = float64(cos*s1) - float64(sin*s2)
-		i2 := 0
-		for l := ii + 1; l < len(h); l++ {
-			i2++
-			a, b := h[l], q.r[j*q.w+i2]
-			q.r[j*q.w+i2] = float64(cos*b) + float64(sin*a)
-			h[l] = float64(cos*a) - float64(sin*b)
+		if !live {
+			break
 		}
 	}
 	return yv

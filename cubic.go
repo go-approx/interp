@@ -332,7 +332,7 @@ func cubicSlopes(x, y, dx, slope []float64, start, end BC) ([]float64, error) {
 	}
 	switch end.Kind {
 	case NotAKnot:
-		di[n-1] = dx[n-2]
+		di[n-1] = dx[n-3]
 		lo[n-2] = x[n-1] - x[n-3]
 		d := x[n-1] - x[n-3]
 		b[n-1] = (float64(float64(dx[n-2]*dx[n-2])*slope[n-3]) + float64(float64((2*d+dx[n-2])*dx[n-3])*slope[n-2])) / d
