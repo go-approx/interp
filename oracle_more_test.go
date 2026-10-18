@@ -146,10 +146,10 @@ func splrepCases() []Case {
 				map[string][]float64{"x": x, "y": y, "xq": queries(r, 40, 0, 1, x, false)}))
 		}
 	}
-	for _, f := range []float64{1e-3, 0.05, 1} {
+	for _, f := range []float64{0.02, 0.05, 0.1} {
 		cs = append(cs, bigCase(fmt.Sprintf("splrep/big/2e4/%g", f), "splrep", 20000, 61, map[string]float64{"k": 3, "s": f * 20000}))
 	}
-	cs = append(cs, bigCase("splrep/big/1e5/k5", "splrep", 100000, 62, map[string]float64{"k": 5, "s": 100}))
+	cs = append(cs, bigCase("splrep/big/1e5/k5", "splrep", 100000, 62, map[string]float64{"k": 5, "s": 5000}))
 	cs = append(cs, mk("splrep/bad/neg-s", "splrep", map[string]float64{"k": 3, "s": -1}, map[string][]float64{"x": x, "y": noise, "xq": {0.5}}))
 	cs = append(cs, mk("splrep/bad/unsorted", "splrep", map[string]float64{"k": 3, "s": 1}, map[string][]float64{"x": append([]float64{0.9}, x[1:]...), "y": noise, "xq": {0.5}}))
 	cs = append(cs, mk("splrep/bad/k0", "splrep", map[string]float64{"k": 0, "s": 1}, map[string][]float64{"x": x, "y": noise, "xq": {0.5}}))

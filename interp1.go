@@ -192,7 +192,10 @@ func npInterp(v float64, xp, fp []float64, left, right float64, hint int) (float
 	case v < xp[0]:
 		return left, hint
 	}
-	j := bound(xp, v, hint, true) - 1
+	j := hint
+	if !(j < n-1 && xp[j] <= v && v < xp[j+1]) {
+		j = bound(xp, v, hint, true) - 1
+	}
 	switch {
 	case j == n-1:
 		return fp[n-1], j

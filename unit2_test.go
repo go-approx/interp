@@ -254,8 +254,8 @@ func TestGridErrorsAndOptions(t *testing.T) {
 
 func TestRemainingBranches(t *testing.T) {
 	// derivative recursion over a triple knot (zero-width spans in the second pass)
-	h, hh := make([]float64, 3), make([]float64, 3)
-	basis([]float64{0, 0, 1, 1, 1, 2, 2}, 1, 2, 3, 1, h, hh)
+	h := make([]float64, 3)
+	basis([]float64{0, 0, 1, 1, 1, 2, 2}, 1, 2, 3, 1, h)
 	if h[0] != 0 {
 		t.Errorf("basis over a triple knot: %v", h)
 	}

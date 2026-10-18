@@ -74,38 +74,46 @@ func findKnotInterval(t []float64, k int, x float64, hint int) int {
 }
 
 // basis computes into h[0..k] the nu-th derivatives at x of the k+1 B-splines
-// that do not vanish on knot interval ell (scipy _deBoor_D); hh is scratch of
-// length k+1.
-func basis(t []float64, x float64, k, ell, nu int, h, hh []float64) {
+// that do not vanish on knot interval ell (scipy _deBoor_D). The recursion
+// runs in place, carrying the previous entry of the row it is overwriting.
+func basis(t []float64, x float64, k, ell, nu int, h []float64) {
 	h[0] = 1
 	for j := 1; j <= k-nu; j++ {
-		copy(hh[:j], h[:j])
+		old := h[0]
 		h[0] = 0
 		for n := 1; n <= j; n++ {
-			ind := ell + n
-			xb, xa := t[ind], t[ind-j]
+			next := 0.0
+			if n < j {
+				next = h[n]
+			}
+			xb, xa := t[ell+n], t[ell+n-j]
 			if xb == xa {
 				h[n] = 0
-				continue
+			} else {
+				w := old / (xb - xa)
+				h[n-1] += float64(w * (xb - x))
+				h[n] = float64(w * (x - xa))
 			}
-			w := hh[n-1] / (xb - xa)
-			h[n-1] += float64(w * (xb - x))
-			h[n] = float64(w * (x - xa))
+			old = next
 		}
 	}
-	for j := k - nu + 1; j <= k; j++ {
-		copy(hh[:j], h[:j])
+	for j := max(k-nu+1, 1); j <= k; j++ {
+		old := h[0]
 		h[0] = 0
 		for n := 1; n <= j; n++ {
-			ind := ell + n
-			xb, xa := t[ind], t[ind-j]
+			next := 0.0
+			if n < j {
+				next = h[n]
+			}
+			xb, xa := t[ell+n], t[ell+n-j]
 			if xb == xa {
 				h[n] = 0
-				continue
+			} else {
+				w := float64(j) * old / (xb - xa)
+				h[n-1] -= w
+				h[n] = w
 			}
-			w := float64(j) * hh[n-1] / (xb - xa)
-			h[n-1] -= w
-			h[n] = w
+			old = next
 		}
 	}
 }
@@ -115,10 +123,10 @@ func basis(t []float64, x float64, k, ell, nu int, h, hh []float64) {
 func (b *BSpline) EvalNu(dst, xs []float64, nu int) {
 	k := b.K
 	n := b.N()
-	var hbuf, hhbuf [16]float64
-	h, hh := hbuf[:], hhbuf[:]
+	var hbuf [16]float64
+	h := hbuf[:]
 	if k+1 > len(h) {
-		h, hh = make([]float64, k+1), make([]float64, k+1)
+		h = make([]float64, k+1)
 	}
 	if nu > k {
 		for i := range xs {
@@ -141,7 +149,7 @@ func (b *BSpline) EvalNu(dst, xs []float64, nu int) {
 		}
 		ell := findKnotInterval(b.T, k, x, hint)
 		hint = ell
-		basis(b.T, x, k, ell, nu, h, hh)
+		basis(b.T, x, k, ell, nu, h)
 		s := 0.0
 		for a := 0; a <= k; a++ {
 			s += float64(b.C[ell+a-k] * h[a])
@@ -285,7 +293,6 @@ func NewDesignMatrix(x, t []float64, k int, extrapolate bool) (*DesignMatrix, er
 		}
 	}
 	d := &DesignMatrix{Left: make([]int, len(x)), Vals: make([]float64, len(x)*(k+1)), K: k, N: n}
-	hh := make([]float64, k+1)
 	hint := k
 	for i, xv := range x {
 		if math.IsNaN(xv) || (!extrapolate && (xv < t[k] || xv > t[n])) {
@@ -293,7 +300,7 @@ func NewDesignMatrix(x, t []float64, k int, extrapolate bool) (*DesignMatrix, er
 		}
 		ell := findKnotInterval(t, k, xv, hint)
 		hint = ell
-		basis(t, xv, k, ell, 0, d.Vals[i*(k+1):(i+1)*(k+1)], hh)
+		basis(t, xv, k, ell, 0, d.Vals[i*(k+1):(i+1)*(k+1)])
 		d.Left[i] = ell - k
 	}
 	return d, nil

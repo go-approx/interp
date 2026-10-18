@@ -127,32 +127,38 @@ func (m *bandLU) set(i, j int, v float64) { m.a[m.at(i, j)] = v }
 // factor computes the LU factorization; it reports false if the matrix is
 // singular (an exactly zero pivot).
 func (m *bandLU) factor() bool {
-	n, kl, ku := m.n, m.kl, m.ku
+	n, kl, ku, w := m.n, m.kl, m.ku, m.w
 	for j := 0; j < n; j++ {
 		last := min(j+kl, n-1)
+		rj := m.a[j*w : (j+1)*w] // row j: column c is at c-j+kl
 		p := j
+		best := math.Abs(rj[kl])
 		for i := j + 1; i <= last; i++ {
-			if math.Abs(m.a[m.at(i, j)]) > math.Abs(m.a[m.at(p, j)]) {
-				p = i
+			if v := math.Abs(m.a[i*w+j-i+kl]); v > best {
+				p, best = i, v
 			}
 		}
 		m.piv[j] = p
-		if m.a[m.at(p, j)] == 0 {
+		if m.a[p*w+j-p+kl] == 0 {
 			return false
 		}
 		cend := min(j+ku+kl, n-1)
 		if p != j {
+			rp := m.a[p*w : (p+1)*w]
 			for c := j; c <= cend; c++ {
-				ip, ij := m.at(p, c), m.at(j, c)
-				m.a[ip], m.a[ij] = m.a[ij], m.a[ip]
+				rp[c-p+kl], rj[c-j+kl] = rj[c-j+kl], rp[c-p+kl]
 			}
 		}
-		r := 1 / m.a[m.at(j, j)]
+		r := 1 / rj[kl]
 		for i := j + 1; i <= last; i++ {
-			l := m.a[m.at(i, j)] * r
+			ri := m.a[i*w : (i+1)*w]
+			l := ri[j-i+kl] * r
 			m.lm[j*kl+(i-j-1)] = l
-			for c := j + 1; c <= cend; c++ {
-				m.a[m.at(i, c)] -= float64(l * m.a[m.at(j, c)])
+			if l == 0 {
+				continue
+			}
+			for off := 1; off <= cend-j; off++ {
+				ri[j+off-i+kl] -= float64(l * rj[j+off-j+kl])
 			}
 		}
 	}
@@ -161,22 +167,24 @@ func (m *bandLU) factor() bool {
 
 // solve overwrites b (length n) with the solution of A x = b.
 func (m *bandLU) solve(b []float64) {
-	n, kl, ku := m.n, m.kl, m.ku
+	n, kl, ku, w := m.n, m.kl, m.ku, m.w
 	for j := 0; j < n; j++ {
 		if p := m.piv[j]; p != j {
 			b[j], b[p] = b[p], b[j]
 		}
 		last := min(j+kl, n-1)
+		lm := m.lm[j*kl : (j+1)*kl]
+		bj := b[j]
 		for i := j + 1; i <= last; i++ {
-			b[i] -= float64(b[j] * m.lm[j*kl+(i-j-1)])
+			b[i] -= float64(bj * lm[i-j-1])
 		}
 	}
 	for j := n - 1; j >= 0; j-- {
 		if b[j] != 0 {
-			b[j] /= m.a[m.at(j, j)]
+			b[j] /= m.a[j*w+kl]
 			t := b[j]
 			for i := j - 1; i >= max(0, j-(kl+ku)); i-- {
-				b[i] -= float64(t * m.a[m.at(i, j)])
+				b[i] -= float64(t * m.a[i*w+j-i+kl])
 			}
 		}
 	}

@@ -137,12 +137,12 @@ func sortedX(r *rand.Rand, n int, lo, hi float64, jitter bool) []float64 {
 		return x
 	}
 	for i := range x {
-		x[i] = lo + (hi-lo)*float64(i)/float64(n-1)
+		x[i] = lo + float64((hi-lo)*float64(i))/float64(n-1)
 	}
 	if jitter {
 		for i := 1; i < n-1; i++ {
 			h := (hi - lo) / float64(n-1)
-			x[i] += (r.Float64() - 0.5) * 0.8 * h
+			x[i] += float64(float64((r.Float64()-0.5)*0.8) * h)
 		}
 	}
 	return x
@@ -162,7 +162,7 @@ func queries(r *rand.Rand, m int, lo, hi float64, x []float64, include bool) []f
 	span := hi - lo
 	q := make([]float64, 0, m+len(x)+2)
 	for i := 0; i < m; i++ {
-		q = append(q, lo-0.15*span+1.3*span*r.Float64())
+		q = append(q, (lo-float64(0.15*span))+float64(float64(1.3*span)*r.Float64()))
 	}
 	if include {
 		q = append(q, x...)
@@ -196,7 +196,15 @@ func sortedKeys(m map[string][]F) []string {
 func bigInputs(seed uint64, n int) (x, y, xq []float64) {
 	r := newRNG(seed)
 	x = sortedX(r, n, 0, 10, true)
-	y = smoothY(r, x, 0.05)
+	// Only + - * / with every product rounded before it is summed: the data
+	// must be bit-identical on every architecture (no math.Sin, no fused
+	// multiply-add), because the fixtures hold only the seed.
+	y = make([]float64, n)
+	walk := 0.0
+	for i, v := range x {
+		walk = float64(0.9*walk) + float64(0.3*(r.Float64()-0.5))
+		y[i] = float64(float64(float64(0.04*v)*(10-v))+walk) + float64(0.05*(r.Float64()-0.5))
+	}
 	xq = queries(r, 2*n, 0, 10, x, false)
 	return
 }
@@ -221,4 +229,19 @@ func (c *Case) stripBig() {
 		delete(c.Vec, "y")
 		delete(c.Vec, "xq")
 	}
+}
+
+// perfDataPlain is the jittered data the benchmarks and the performance
+// comparison share: n nodes on [0, 10], a smooth noisy signal and n sorted
+// uniform queries.
+func perfDataPlain(n int) (x, y, xq []float64) {
+	r := newRNG(1)
+	x = sortedX(r, n, 0, 10, true)
+	y = smoothY(r, x, 0.05)
+	xq = make([]float64, n)
+	for i := range xq {
+		xq[i] = r.Float64() * 10
+	}
+	sort.Float64s(xq)
+	return
 }

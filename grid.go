@@ -92,10 +92,10 @@ func MakeNdInterp(axes [][]float64, values []float64, k ...int) (_ *NdBSpline, e
 		t := notAKnot(axes[d], k)
 		ts[d] = t
 		m := newBand(n, k, k)
-		h, hh := make([]float64, k+1), make([]float64, k+1)
+		h := make([]float64, k+1)
 		for i, xv := range axes[d] {
 			ell := findKnotInterval(t, k, xv, k)
-			basis(t, xv, k, ell, 0, h, hh)
+			basis(t, xv, k, ell, 0, h)
 			for a := 0; a <= k; a++ {
 				m.set(i, ell-k+a, h[a])
 			}
@@ -132,7 +132,6 @@ func (s *NdBSpline) EvalNu(dst, xi []float64, nu []int) {
 		stride *= s.Shape[d]
 	}
 	hs := make([][]float64, nd)
-	hh := make([]float64, maxInts(s.K)+1)
 	ells := make([]int, nd)
 	for d := range hs {
 		hs[d] = make([]float64, s.K[d]+1)
@@ -156,7 +155,7 @@ func (s *NdBSpline) EvalNu(dst, xi []float64, nu []int) {
 					hs[d][a] = 0
 				}
 			} else {
-				basis(s.T[d], x, s.K[d], ell, o, hs[d], hh)
+				basis(s.T[d], x, s.K[d], ell, o, hs[d])
 			}
 		}
 		if nan {
@@ -165,14 +164,6 @@ func (s *NdBSpline) EvalNu(dst, xi []float64, nu []int) {
 		}
 		dst[p] = s.contract(hs, ells, strides, 0, 0)
 	}
-}
-
-func maxInts(v []int) int {
-	m := v[0]
-	for _, x := range v {
-		m = max(m, x)
-	}
-	return m
 }
 
 // contract sums the tensor product from dimension d on with flat offset off.

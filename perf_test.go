@@ -134,17 +134,7 @@ func goTimeit(f func(), mintime float64) float64 {
 }
 
 // perfData mirrors the Python data().
-func perfData(n int) (x, y, xq []float64) {
-	r := newRNG(1)
-	x = sortedX(r, n, 0, 10, true)
-	y = smoothY(r, x, 0.05)
-	xq = make([]float64, n)
-	for i := range xq {
-		xq[i] = r.Float64() * 10
-	}
-	sort.Float64s(xq)
-	return
-}
+func perfData(n int) (x, y, xq []float64) { return perfDataPlain(n) }
 
 type perfOp struct {
 	name   string

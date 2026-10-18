@@ -184,10 +184,12 @@ func MakeInterpSpline(x, y []float64, k int, o *SplineOptions) (_ *BSpline, err 
 		return nil, ErrBC
 	}
 	m := newBand(nt, k, k)
-	h, hh := make([]float64, k+1), make([]float64, k+1)
+	h := make([]float64, k+1)
+	hint := k
 	put := func(row int, x float64, nu int) bool {
-		ell := findKnotInterval(t, k, x, k)
-		basis(t, x, k, ell, nu, h, hh)
+		ell := findKnotInterval(t, k, x, hint)
+		hint = ell
+		basis(t, x, k, ell, nu, h)
 		for a := 0; a <= k; a++ {
 			col := ell - k + a
 			if col-row > k || row-col > k {
@@ -233,10 +235,10 @@ func makePeriodic(x, y, t []float64, k int) []float64 {
 		v   float64
 	}
 	rows := make([][]entry, nn)
-	h, hh := make([]float64, k+1), make([]float64, k+1)
+	h := make([]float64, k+1)
 	for i := 0; i < nn; i++ {
 		ell := findKnotInterval(t, k, x[i], k)
-		basis(t, x[i], k, ell, 0, h, hh)
+		basis(t, x[i], k, ell, 0, h)
 		for a := 0; a <= k; a++ {
 			col := ((ell-k+a-kul)%nn + nn) % nn
 			rows[i] = append(rows[i], entry{col, h[a]})
@@ -314,13 +316,13 @@ func makePeriodicFull(x, y, t []float64, k int) []float64 {
 	n := len(x)
 	sz := n + k - 1
 	a := make([]float64, sz*sz)
-	h, hh := make([]float64, k+1), make([]float64, k+1)
+	h := make([]float64, k+1)
 	for i := 0; i < k-1; i++ {
-		basis(t, x[0], k, k, i+1, h, hh)
+		basis(t, x[0], k, k, i+1, h)
 		for c := 0; c <= k; c++ {
 			a[i*sz+c] += h[c]
 		}
-		basis(t, x[n-1], k, n+k-1, i+1, h, hh)
+		basis(t, x[n-1], k, n+k-1, i+1, h)
 		for c := 0; c < k; c++ {
 			a[i*sz+sz-k+c] -= h[c]
 		}
@@ -330,7 +332,7 @@ func makePeriodicFull(x, y, t []float64, k int) []float64 {
 		if x[i] != t[k] {
 			left = sort.SearchFloat64s(t, x[i]) - 1
 		}
-		basis(t, x[i], k, left, 0, h, hh)
+		basis(t, x[i], k, left, 0, h)
 		copy(a[(i+k-1)*sz+left-k:], h[:k+1])
 	}
 	b := make([]float64, sz)
@@ -439,12 +441,12 @@ func solveLsq(q *lsq) []float64 {
 func buildLsq(x, y, w, t []float64, k int) *lsq {
 	nc := len(t) - k - 1
 	q := newLsq(nc, k)
-	h, hh := make([]float64, k+1), make([]float64, k+1)
+	h := make([]float64, k+1)
 	hint := k
 	for i, xv := range x {
 		ell := findKnotInterval(t, k, xv, hint)
 		hint = ell
-		basis(t, xv, k, ell, 0, h, hh)
+		basis(t, xv, k, ell, 0, h)
 		wi := w[i]
 		for a := range h {
 			h[a] *= wi
@@ -458,13 +460,13 @@ func buildLsq(x, y, w, t []float64, k int) *lsq {
 // the weighted squared residuals and their sum.
 func residuals(x, y, w, t []float64, k int, c []float64) ([]float64, float64) {
 	res := make([]float64, len(x))
-	h, hh := make([]float64, k+1), make([]float64, k+1)
+	h := make([]float64, k+1)
 	hint := k
 	fp := 0.0
 	for i, xv := range x {
 		ell := findKnotInterval(t, k, xv, hint)
 		hint = ell
-		basis(t, xv, k, ell, 0, h, hh)
+		basis(t, xv, k, ell, 0, h)
 		s := 0.0
 		for a := 0; a <= k; a++ {
 			s += float64(c[ell-k+a] * h[a])
