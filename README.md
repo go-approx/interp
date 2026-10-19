@@ -102,7 +102,9 @@ interp1d, `make_splrep` (2x), least-squares splines (3–1700x) and every
   where FITPACK's `fpknot` updates the per-interval residual sums
   incrementally (one solve per pass). Fix: a `Splrep` porting `fpcurf` /
   `fpknot` (it also places knots like the legacy routine).
-- `RectBivariateSpline` evaluation (0.55–0.72x) and construction (0.84–0.88x).
+- `RectBivariateSpline` construction (0.84–0.88x). (Its evaluation was
+  0.55–0.72x in the table; it no longer allocates per point and measured at
+  parity on 40 000 points since: `Bicubic.At`/`Ev`.)
 - `np.interp` / linear `interp1d` evaluation (0.86–0.89x), quintic B-spline
   evaluation (0.92–0.97x), not-a-knot cubic construction from 10^5 points
   (0.92x: the `dgtsv` division chain SciPy also runs).

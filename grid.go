@@ -385,9 +385,58 @@ func (b *Bicubic) clamp(x, y float64) (float64, float64) {
 // (x, y); outside the grid the point is first clamped to it.
 func (b *Bicubic) Deriv(x, y float64, dx, dy int) float64 {
 	x, y = b.clamp(x, y)
-	var d [1]float64
-	b.s.EvalNu(d[:], []float64{x, y}, []int{dx, dy})
-	return d[0]
+	s := b.s
+	kx, ky := s.K[0], s.K[1]
+	if kx >= maxStackK || ky >= maxStackK {
+		var d [1]float64
+		s.EvalNu(d[:], []float64{x, y}, []int{dx, dy})
+		return d[0]
+	}
+	if math.IsNaN(x) || math.IsNaN(y) {
+		return math.NaN()
+	}
+	// The two-dimensional case of NdBSpline.EvalNu without its slices and
+	// recursion: the same basis values, the same sums in the same order with
+	// the same roundings, so the same bits.
+	var hx, hy [maxStackK]float64
+	ex := findKnotInterval(s.T[0], kx, x, kx)
+	ey := findKnotInterval(s.T[1], ky, y, ky)
+	if dx <= kx {
+		basis(s.T[0], x, kx, ex, dx, hx[:kx+1])
+	}
+	if dy <= ky {
+		basis(s.T[1], y, ky, ey, dy, hy[:ky+1])
+	}
+	ny := s.Shape[1]
+	sum := 0.0
+	for a := 0; a <= kx; a++ {
+		if hx[a] == 0 {
+			continue
+		}
+		row := s.C[(ex-kx+a)*ny+ey-ky:]
+		inner := 0.0
+		for c := 0; c <= ky; c++ {
+			inner += float64(row[c] * hy[c])
+		}
+		sum += float64(hx[a] * inner)
+	}
+	return sum
+}
+
+// maxStackK bounds the degrees evaluated with stack buffers (higher degrees
+// take the general path).
+const maxStackK = 8
+
+// Ev evaluates the interpolant at the points (xs[i], ys[i]) into dst
+// (scipy RectBivariateSpline.ev), clamping coordinates outside the grid.
+func (b *Bicubic) Ev(dst, xs, ys []float64) error {
+	if len(xs) != len(ys) || len(dst) != len(xs) {
+		return ErrShape
+	}
+	for i := range xs {
+		dst[i] = b.Deriv(xs[i], ys[i], 0, 0)
+	}
+	return nil
 }
 
 // EvalGrid evaluates the partial derivatives (dx, dy) on the cartesian
