@@ -91,6 +91,22 @@ same maths, not against Octave.
 points, Go against SciPy on one core, interleaved rounds, with the load average
 of the host. It states the load it was taken at; the host is shared.
 
+Measured 2026-10-19 (load 3–5): faster than SciPy on PCHIP, Akima/makima,
+cubic evaluation, periodic cubic construction (1.4–4.7x), nearest-neighbour
+interp1d, `make_splrep` (2x), least-squares splines (3–1700x) and every
+`RegularGridInterpolator` construction (13–107x).
+
+**Open defects — still slower than the reference:**
+- `splrep` against SciPy's legacy FITPACK `splrep` (0.33–0.38x). Cause: like
+  `make_splrep`, every knot added within a pass re-solves the full problem,
+  where FITPACK's `fpknot` updates the per-interval residual sums
+  incrementally (one solve per pass). Fix: a `Splrep` porting `fpcurf` /
+  `fpknot` (it also places knots like the legacy routine).
+- `RectBivariateSpline` evaluation (0.55–0.72x) and construction (0.84–0.88x).
+- `np.interp` / linear `interp1d` evaluation (0.86–0.89x), quintic B-spline
+  evaluation (0.92–0.97x), not-a-knot cubic construction from 10^5 points
+  (0.92x: the `dgtsv` division chain SciPy also runs).
+
 ## Gaps
 
 - Scattered-data interpolation (Delaunay, natural neighbour, RBF) is in a later

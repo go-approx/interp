@@ -12,17 +12,24 @@ func prepare(x, y []float64) ([]float64, error) {
 	if n < 2 || len(y) != n {
 		return nil, ErrShape
 	}
+	// One pass: v*0 is NaN exactly when v is NaN or ±Inf, so the sum s is
+	// NaN iff some input is non-finite (reported first, as before); a
+	// non-increasing step is only remembered.
 	dx := make([]float64, n-1)
-	for i := 0; i < n; i++ {
-		if math.IsNaN(x[i]) || math.IsInf(x[i], 0) || math.IsNaN(y[i]) || math.IsInf(y[i], 0) {
-			return nil, ErrNonFinite
-		}
-	}
+	s := x[n-1]*0 + y[n-1]*0
+	increasing := true
 	for i := 0; i < n-1; i++ {
+		s += x[i]*0 + y[i]*0
 		dx[i] = x[i+1] - x[i]
 		if dx[i] <= 0 {
-			return nil, ErrNotIncreasing
+			increasing = false
 		}
+	}
+	if s != 0 {
+		return nil, ErrNonFinite
+	}
+	if !increasing {
+		return nil, ErrNotIncreasing
 	}
 	return dx, nil
 }
@@ -294,70 +301,66 @@ func NewCubicSplineBC(x, y []float64, start, end BC) (p *PPoly, err error) {
 // cubicSlopes solves the tridiagonal system for the derivative at every node.
 func cubicSlopes(x, y, dx, slope []float64, start, end BC) []float64 {
 	n := len(x)
-	up := make([]float64, n) // up[j] = A[j-1][j]
+	// One pass builds the three diagonals and the right-hand side:
+	// du[j] = A[j][j+1], di[j] = A[j][j], dl[j] = A[j+1][j].
+	du := make([]float64, n-1)
 	di := make([]float64, n)
-	lo := make([]float64, n) // lo[j] = A[j+1][j]
+	dl := make([]float64, n-1)
 	b := make([]float64, n)
 	for j := 1; j <= n-2; j++ {
 		di[j] = 2 * (dx[j-1] + dx[j])
 		b[j] = 3 * (float64(dx[j]*slope[j-1]) + float64(dx[j-1]*slope[j]))
-	}
-	for j := 2; j < n; j++ {
-		up[j] = dx[j-2]
-	}
-	for j := 0; j <= n-3; j++ {
-		lo[j] = dx[j+1]
+		du[j] = dx[j-1]
+		dl[j-1] = dx[j]
 	}
 	if start.Kind == Periodic {
-		return cubicPeriodic(dx, slope, up, di, lo, b)
+		return cubicPeriodic(dx, slope, du, di, dl, b)
 	}
 	switch start.Kind {
 	case NotAKnot:
 		di[0] = dx[1]
-		up[1] = x[2] - x[0]
+		du[0] = x[2] - x[0]
 		d := x[2] - x[0]
 		b[0] = (float64(float64((dx[0]+2*d)*dx[1])*slope[0]) + float64(float64(dx[0]*dx[0])*slope[1])) / d
 	default:
 		if ord, v := start.order(); ord == 1 {
 			di[0] = 1
-			up[1] = 0
+			du[0] = 0
 			b[0] = v
 		} else {
 			di[0] = 2 * dx[0]
-			up[1] = dx[0]
+			du[0] = dx[0]
 			b[0] = float64(float64(-0.5*v)*float64(dx[0]*dx[0])) + float64(3*(y[1]-y[0]))
 		}
 	}
 	switch end.Kind {
 	case NotAKnot:
 		di[n-1] = dx[n-3]
-		lo[n-2] = x[n-1] - x[n-3]
+		dl[n-2] = x[n-1] - x[n-3]
 		d := x[n-1] - x[n-3]
 		b[n-1] = (float64(float64(dx[n-2]*dx[n-2])*slope[n-3]) + float64(float64((2*d+dx[n-2])*dx[n-3])*slope[n-2])) / d
 	default:
 		if ord, v := end.order(); ord == 1 {
 			di[n-1] = 1
-			lo[n-2] = 0
+			dl[n-2] = 0
 			b[n-1] = v
 		} else {
 			di[n-1] = 2 * dx[n-2]
-			lo[n-2] = dx[n-2]
+			dl[n-2] = dx[n-2]
 			b[n-1] = float64(float64(0.5*v)*float64(dx[n-2]*dx[n-2])) + float64(3*(y[n-1]-y[n-2]))
 		}
 	}
-	dl := lo[:n-1]
-	du := up[1:]
 	must(gtsv(dl, di, du, b))
 	return b
 }
 
 // cubicPeriodic solves the cyclic system by condensing it to a tridiagonal
 // one of order n-2 (scipy CubicSpline, bc_type="periodic").
-func cubicPeriodic(dx, slope, up, di, lo, b []float64) []float64 {
+func cubicPeriodic(dx, slope, du, di, dl, b []float64) []float64 {
 	n := len(di)
 	nn := n - 2
 	di[0] = 2 * (dx[n-2] + dx[0])
-	up[1] = dx[n-2]
+	du[0] = dx[n-2]
 	aM10 := dx[n-3]
 	aM1M2 := dx[n-2]
 	aM1M1 := 2 * (dx[n-2] + dx[n-3])
@@ -365,18 +368,12 @@ func cubicPeriodic(dx, slope, up, di, lo, b []float64) []float64 {
 	a0M1 := dx[0]
 	b[0] = 3 * (float64(dx[0]*slope[n-2]) + float64(dx[n-2]*slope[0]))
 	bLast := 3 * (float64(dx[n-2]*slope[n-3]) + float64(dx[n-3]*slope[n-2]))
-	b1 := append([]float64(nil), b[:nn]...)
+	b1 := b[:nn]
 	b2 := make([]float64, nn)
 	b2[0] = -a0M1
 	b2[nn-1] = -aM2M1
-	solve := func(rhs []float64) bool {
-		d := append([]float64(nil), di[:nn]...)
-		dl := append([]float64(nil), lo[:nn-1]...)
-		du := append([]float64(nil), up[1:nn]...)
-		return gtsv(dl, d, du, rhs)
-	}
-	must(solve(b1))
-	must(solve(b2))
+	// Both right-hand sides share one factorization of the order-nn system.
+	must(gtsv2(dl[:nn-1], di[:nn], du[:nn-1], b1, b2))
 	sm1 := ((bLast - float64(aM10*b1[0])) - float64(aM1M2*b1[nn-1])) /
 		((aM1M1 + float64(aM10*b2[0])) + float64(aM1M2*b2[nn-1]))
 	s := make([]float64, n)

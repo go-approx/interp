@@ -9,7 +9,26 @@ import "math"
 // overwritten. It reports false if the matrix is exactly singular.
 func gtsv(dl, d, du, b []float64) bool {
 	n := len(d)
-	for i := 0; i < n-2; i++ {
+	// Fast path: while no row interchange is called for — always, for the
+	// diagonally dominant systems of the splines — eliminate with the same
+	// operations as the general loop below, without its stores (dl[i] = 0).
+	// The first row that needs an interchange hands over to the general
+	// loop, which then sees exactly the state it would have built itself.
+	clean := 0
+	for clean < n-1 && d[clean] != 0 && math.Abs(d[clean]) >= math.Abs(dl[clean]) {
+		i := clean
+		fact := dl[i] / d[i]
+		d[i+1] -= float64(fact * du[i])
+		b[i+1] -= float64(fact * b[i])
+		clean++
+	}
+	if clean == n-1 {
+		return gtsvBack(dl, d, du, b, clean)
+	}
+	for k := 0; k < min(clean, n-2); k++ {
+		dl[k] = 0 // what the general loop would have stored for these rows
+	}
+	for i := clean; i < n-2; i++ {
 		if math.Abs(d[i]) >= math.Abs(dl[i]) {
 			if d[i] == 0 {
 				return false
@@ -31,7 +50,7 @@ func gtsv(dl, d, du, b []float64) bool {
 			b[i+1] = temp - float64(fact*b[i+1])
 		}
 	}
-	if n > 1 {
+	if n > 1 && clean <= n-2 {
 		i := n - 2
 		if math.Abs(d[i]) >= math.Abs(dl[i]) {
 			if d[i] == 0 {
@@ -51,6 +70,15 @@ func gtsv(dl, d, du, b []float64) bool {
 			b[i+1] = temp - float64(fact*b[i+1])
 		}
 	}
+	return gtsvBack(dl, d, du, b, 0)
+}
+
+// gtsvBack is dgtsv's back substitution. Rows below clean were eliminated by
+// the fast path, whose dl entries are logically zero (not stored): their
+// term is computed as 0*b[i+2], as the general path computes dl[i]*b[i+2]
+// with the dl[i] = 0 it stored, so signed zeros and NaNs come out the same.
+func gtsvBack(dl, d, du, b []float64, clean int) bool {
+	n := len(d)
 	if d[n-1] == 0 {
 		return false
 	}
@@ -58,8 +86,65 @@ func gtsv(dl, d, du, b []float64) bool {
 	if n > 1 {
 		b[n-2] = (b[n-2] - float64(du[n-2]*b[n-1])) / d[n-2]
 	}
+	i := n - 3
+	for ; i >= clean; i-- {
+		b[i] = (b[i] - float64(du[i]*b[i+1]) - float64(dl[i]*b[i+2])) / d[i]
+	}
+	var zero float64
+	for ; i >= 0; i-- {
+		b[i] = (b[i] - float64(du[i]*b[i+1]) - float64(zero*b[i+2])) / d[i]
+	}
+	return true
+}
+
+// gtsv2 is gtsv for two right-hand sides b and c sharing one factorization:
+// the same pivots and the same operations, in the same order, as two gtsv
+// calls on copies of (dl, d, du), so each solution is bit-identical to
+// gtsv's.
+func gtsv2(dl, d, du, b, c []float64) bool {
+	n := len(d)
+	for i := 0; i < n-1; i++ {
+		if math.Abs(d[i]) >= math.Abs(dl[i]) {
+			if d[i] == 0 {
+				return false
+			}
+			fact := dl[i] / d[i]
+			d[i+1] -= float64(fact * du[i])
+			b[i+1] -= float64(fact * b[i])
+			c[i+1] -= float64(fact * c[i])
+			if i < n-2 {
+				dl[i] = 0
+			}
+		} else {
+			fact := d[i] / dl[i]
+			d[i] = dl[i]
+			temp := d[i+1]
+			d[i+1] = du[i] - float64(fact*temp)
+			if i < n-2 {
+				dl[i] = du[i+1]
+				du[i+1] = -float64(fact * dl[i])
+			}
+			du[i] = temp
+			temp = b[i]
+			b[i] = b[i+1]
+			b[i+1] = temp - float64(fact*b[i+1])
+			temp = c[i]
+			c[i] = c[i+1]
+			c[i+1] = temp - float64(fact*c[i+1])
+		}
+	}
+	if d[n-1] == 0 {
+		return false
+	}
+	b[n-1] /= d[n-1]
+	c[n-1] /= d[n-1]
+	if n > 1 {
+		b[n-2] = (b[n-2] - float64(du[n-2]*b[n-1])) / d[n-2]
+		c[n-2] = (c[n-2] - float64(du[n-2]*c[n-1])) / d[n-2]
+	}
 	for i := n - 3; i >= 0; i-- {
 		b[i] = (b[i] - float64(du[i]*b[i+1]) - float64(dl[i]*b[i+2])) / d[i]
+		c[i] = (c[i] - float64(du[i]*c[i+1]) - float64(dl[i]*c[i+2])) / d[i]
 	}
 	return true
 }

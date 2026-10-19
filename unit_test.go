@@ -20,6 +20,45 @@ func isErr(t *testing.T, name string, err, want error) {
 	}
 }
 
+// TestGtsv2MatchesGtsv checks that gtsv2 gives, for each right-hand side,
+// the bits two gtsv calls on copies give — including systems that pivot
+// (small diagonal) and singular ones.
+func TestGtsv2MatchesGtsv(t *testing.T) {
+	cp := func(v []float64) []float64 { return append([]float64(nil), v...) }
+	systems := [][4][]float64{ // dl, d, du, (unused)
+		{{1, 1, 1}, {4, 4, 4, 4}, {1, 1, 1}},             // dominant: no interchange
+		{{1, 1, 1}, {1e-3, 1e-3, 1e-3, 1e-3}, {1, 1, 1}}, // every row interchanges
+		{{1, 0.1, 1}, {1e-3, 5, 1e-3, 2}, {2, 1, 3}},     // mixed
+		{{3}, {1e-3, 2}, {1}},                            // n = 2, interchange
+		{{0, 0}, {0, 1, 1}, {1, 1}},                      // zero first pivot
+		{{1, 0}, {1, 1, 0}, {1, 1}},                      // zero last pivot
+		{{0}, {0, 1}, {1}},                               // zero pivot in the n-2 step
+		{{1}, {1, 1}, {1}},                               // elimination leaves a zero last pivot
+	}
+	for k, s := range systems {
+		n := len(s[1])
+		b, c := make([]float64, n), make([]float64, n)
+		for i := range b {
+			b[i], c[i] = float64(i+1), float64(2*i-3)
+		}
+		wb, wc := cp(b), cp(c)
+		okb := gtsv(cp(s[0]), cp(s[1]), cp(s[2]), wb)
+		okc := gtsv(cp(s[0]), cp(s[1]), cp(s[2]), wc)
+		ok := gtsv2(cp(s[0]), cp(s[1]), cp(s[2]), b, c)
+		if ok != okb || ok != okc {
+			t.Fatalf("system %d: gtsv2 ok=%v, gtsv %v/%v", k, ok, okb, okc)
+		}
+		if !ok {
+			continue
+		}
+		for i := range b {
+			if math.Float64bits(b[i]) != math.Float64bits(wb[i]) || math.Float64bits(c[i]) != math.Float64bits(wc[i]) {
+				t.Fatalf("system %d row %d: gtsv2 (%v, %v), gtsv (%v, %v)", k, i, b[i], c[i], wb[i], wc[i])
+			}
+		}
+	}
+}
+
 func TestLinsolveSingular(t *testing.T) {
 	// gtsv: a zero pivot with nothing to swap in, at each place it can occur
 	if gtsv([]float64{0, 0}, []float64{0, 1, 1}, []float64{1, 1}, []float64{1, 1, 1}) {
