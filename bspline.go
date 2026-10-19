@@ -57,13 +57,17 @@ func findKnotInterval(t []float64, k int, x float64, hint int) int {
 		}
 		lo = min(hint+1, n-1)
 	}
-	for hi-lo > 1 {
-		mid := int(uint(lo+hi) >> 1)
-		if x >= t[mid] {
-			lo = mid
-		} else {
-			hi = mid
+	// The last i in [lo, hi) with x >= t[i] (lo itself when there is none).
+	// Note: Go 1.27 still compiles the float comparison to a branch, so
+	// random queries mispredict here; a branch-free form would need the
+	// knots stored as order-preserving integers.
+	for size := hi - lo; size > 1; {
+		half := size >> 1
+		next := lo + half
+		if x >= t[next] {
+			lo = next
 		}
+		size -= half
 	}
 	// At the right end the interval must have non-zero width (repeated end
 	// knots, as an antiderivative of a piecewise constant spline has).

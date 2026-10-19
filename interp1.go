@@ -46,6 +46,7 @@ type Interp1D struct {
 	x, y        []float64
 	kind        Kind
 	bds         []float64 // nearest: midpoints; previous/next: shifted x
+	slope       []float64 // linear without extrapolation: slopes(x, y)
 	below       float64
 	above       float64
 	extrapolate bool
@@ -90,6 +91,10 @@ func NewInterp1D(x, y []float64, kind Kind, o *Interp1Options) (*Interp1D, error
 		f.below, f.above = o.Fill[0], o.Fill[1]
 	}
 	switch kind {
+	case Linear:
+		if !o.Extrapolate && n > 1 {
+			f.slope = slopes(xs, ys)
+		}
 	case Nearest, NearestUp:
 		f.bds = make([]float64, n-1)
 		for i := range f.bds {
@@ -120,24 +125,19 @@ func NewInterp1D(x, y []float64, kind Kind, o *Interp1Options) (*Interp1D, error
 	return f, nil
 }
 
-// bound is the first index i with a[i] >= v (strict false: numpy
-// searchsorted side="left") or a[i] > v (strict true: side="right"), looking
-// near hint first because consecutive queries are usually close.
-func bound(a []float64, v float64, hint int, strict bool) int {
+// boundLeft is the first index i with a[i] >= v (numpy searchsorted
+// side="left"), looking near hint first because consecutive queries are
+// usually close. The comparisons are spelled out (no closure, no flag) so
+// the common case — the answer next to hint — costs a couple of compares.
+func boundLeft(a []float64, v float64, hint int) int {
 	n := len(a)
-	before := func(i int) bool {
-		if strict {
-			return a[i] <= v
-		}
-		return a[i] < v
-	}
 	lo, hi := 0, n
 	if hint < n {
-		if before(hint) {
-			if hint+1 == n || !before(hint+1) {
+		if a[hint] < v {
+			if hint+1 == n || !(a[hint+1] < v) {
 				return hint + 1
 			}
-			if hint+2 == n || !before(hint+2) {
+			if hint+2 == n || !(a[hint+2] < v) {
 				return hint + 2
 			}
 			lo = hint + 3
@@ -147,7 +147,7 @@ func bound(a []float64, v float64, hint int, strict bool) int {
 	}
 	for lo < hi {
 		mid := int(uint(lo+hi) >> 1)
-		if before(mid) {
+		if a[mid] < v {
 			lo = mid + 1
 		} else {
 			hi = mid
@@ -156,24 +156,65 @@ func bound(a []float64, v float64, hint int, strict bool) int {
 	return lo
 }
 
+// boundRight is bound(a, v, hint, true): the first i with a[i] > v.
+func boundRight(a []float64, v float64, hint int) int {
+	n := len(a)
+	lo, hi := 0, n
+	if hint < n {
+		if a[hint] <= v {
+			if hint+1 == n || !(a[hint+1] <= v) {
+				return hint + 1
+			}
+			if hint+2 == n || !(a[hint+2] <= v) {
+				return hint + 2
+			}
+			lo = hint + 3
+		} else {
+			hi = hint
+		}
+	}
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if a[mid] <= v {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+// slopes returns (fp[j+1]-fp[j])/(xp[j+1]-xp[j]) for each interval — the
+// value npInterp would compute for that interval, bit for bit — so that
+// many queries share one division per interval, as numpy.interp does when
+// there are at least as many queries as nodes.
+func slopes(xp, fp []float64) []float64 {
+	s := make([]float64, max(len(xp)-1, 0))
+	for j := range s {
+		s[j] = (fp[j+1] - fp[j]) / (xp[j+1] - xp[j])
+	}
+	return s
+}
+
 // searchLeft is numpy.searchsorted(a, v, side="left") with NaN sorted last.
 func searchLeft(a []float64, v float64, hint int) int {
 	if math.IsNaN(v) {
 		return len(a)
 	}
-	return bound(a, v, hint, false)
+	return boundLeft(a, v, hint)
 }
 
 func searchRight(a []float64, v float64, hint int) int {
 	if math.IsNaN(v) {
 		return len(a)
 	}
-	return bound(a, v, hint, true)
+	return boundRight(a, v, hint)
 }
 
 // npInterp is numpy.interp for one point with the given left/right values;
 // hint is the index found for the previous point, and the new one is returned.
-func npInterp(v float64, xp, fp []float64, left, right float64, hint int) (float64, int) {
+// slope, when not nil, holds the precomputed slopes(xp, fp).
+func npInterp(v float64, xp, fp []float64, left, right float64, hint int, slope []float64) (float64, int) {
 	n := len(xp)
 	if n == 1 { // numpy compares, so a NaN query falls through to the value
 		switch {
@@ -194,7 +235,7 @@ func npInterp(v float64, xp, fp []float64, left, right float64, hint int) (float
 	}
 	j := hint
 	if !(j < n-1 && xp[j] <= v && v < xp[j+1]) {
-		j = bound(xp, v, hint, true) - 1
+		j = boundRight(xp, v, hint) - 1
 	}
 	switch {
 	case j == n-1:
@@ -202,10 +243,15 @@ func npInterp(v float64, xp, fp []float64, left, right float64, hint int) (float
 	case xp[j] == v:
 		return fp[j], j
 	}
-	slope := (fp[j+1] - fp[j]) / (xp[j+1] - xp[j])
-	r := math.FMA(slope, v-xp[j], fp[j])
+	var sl float64
+	if slope != nil {
+		sl = slope[j]
+	} else {
+		sl = (fp[j+1] - fp[j]) / (xp[j+1] - xp[j])
+	}
+	r := math.FMA(sl, v-xp[j], fp[j])
 	if math.IsNaN(r) {
-		r = math.FMA(slope, v-xp[j+1], fp[j+1])
+		r = math.FMA(sl, v-xp[j+1], fp[j+1])
 		if math.IsNaN(r) && fp[j] == fp[j+1] {
 			r = fp[j]
 		}
@@ -219,9 +265,13 @@ func Interp(dst, x, xp, fp []float64, left, right float64) error {
 	if len(xp) == 0 || len(xp) != len(fp) || len(dst) != len(x) {
 		return ErrShape
 	}
+	var sl []float64
+	if len(x) >= len(xp) {
+		sl = slopes(xp, fp)
+	}
 	hint := 0
 	for i, v := range x {
-		dst[i], hint = npInterp(v, xp, fp, left, right, hint)
+		dst[i], hint = npInterp(v, xp, fp, left, right, hint, sl)
 	}
 	return nil
 }
@@ -250,7 +300,7 @@ func (f *Interp1D) EvalAll(dst, xq []float64) error {
 				r = float64((v-f.x[lo])/(f.x[hi]-f.x[lo])*f.y[hi]) +
 					float64((f.x[hi]-v)/(f.x[hi]-f.x[lo])*f.y[lo])
 			} else {
-				r, hint = npInterp(v, f.x, f.y, f.y[0], f.y[n-1], hint)
+				r, hint = npInterp(v, f.x, f.y, f.y[0], f.y[n-1], hint, f.slope)
 			}
 		case Nearest:
 			hint = searchLeft(f.bds, v, hint)
