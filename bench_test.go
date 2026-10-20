@@ -34,6 +34,16 @@ func BenchmarkBSplineEval(b *testing.B) {
 	}
 }
 
+func BenchmarkBSpline5Eval(b *testing.B) {
+	x, y, xq := benchData(100000)
+	s, _ := MakeInterpSpline(x, y, 5, nil)
+	out := make([]float64, len(xq))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.EvalAll(out, xq)
+	}
+}
+
 func BenchmarkPPolyEval(b *testing.B) {
 	x, y, xq := benchData(100000)
 	p, _ := NewCubicSpline(x, y, "not-a-knot")
