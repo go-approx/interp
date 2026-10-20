@@ -54,6 +54,37 @@ func TestSplrepLegacyFixture(t *testing.T) {
 	st.within(t, "splrep (fpcurf port)", 1<<62, 1e-9)
 }
 
+// TestFitpackRoot drives the part-2 iteration through each of its branches
+// with synthetic f(p).
+func TestFitpackRoot(t *testing.T) {
+	if ier, p := fitpackRoot(func(p float64) float64 { return 2 - p }, 1, 2, -1, 1e-12); ier != 0 || math.Abs(p-2) > 1e-9 {
+		t.Errorf("root: %d %g", ier, p)
+	}
+	// A constant f: one rational step, then f2 >= f1 is not convex (ier 2).
+	if ier, _ := fitpackRoot(func(p float64) float64 { return 1 }, 1, 3, -1, 1e-12); ier != 2 {
+		t.Errorf("constant: %d", ier)
+	}
+	seq := func(v ...float64) func(float64) float64 {
+		i := 0
+		return func(float64) float64 { i++; return v[min(i-1, len(v)-1)] }
+	}
+	// p too large, then too small with p3 known: both bracket updates, then
+	// values that never meet the target: p grows by 1/0.04 until the
+	// iteration limit (ier 3).
+	if ier, _ := fitpackRoot(seq(-1, 1, 5), 1, 1, -1, 1e-12); ier != 3 {
+		t.Errorf("brackets: %d", ier)
+	}
+	// p too small twice with p3 still infinite, then too large with p1 > 0
+	// so that p is pulled back between p1 and p2.
+	if ier, _ := fitpackRoot(seq(1, 1, -1, -1, 0.5, -0.5), 1, 1, -1, 1e-12); ier == 0 {
+		t.Errorf("pull back: %d", ier)
+	}
+	// fpknot's error exit: no interval holds a data point.
+	if n, nr := fpknotAdd([]float64{0, 1}, make([]float64, 10), 8, make([]float64, 10), make([]int, 10), 1); n != 9 || nr != 2 {
+		t.Errorf("fpknot exit: %d %d", n, nr)
+	}
+}
+
 func TestSplrepErrorsAndStatus(t *testing.T) {
 	x, y, _ := perfDataPlain(40)
 	bad := func(name string, x, y []float64, k int, s float64, o *SplrepOptions, want error) {
@@ -102,6 +133,11 @@ func TestSplrepErrorsAndStatus(t *testing.T) {
 	// nest too small for s: ier 1 with nest knots.
 	if sm, _ := Splrep(x, y, 3, 1e-6, &SplrepOptions{Nest: 12, Bounds: &[2]float64{-1, 11}}); sm.Ier != 1 || len(sm.Spline.T) != 12 {
 		t.Errorf("nest: %+v", sm)
+	}
+	// s within 0.1% of the least-squares fit's fp: accepted at once.
+	poly, _ := Splrep(x, y, 3, 1e9, nil)
+	if sm, _ := Splrep(x, y, 3, poly.Fp*(1+1e-5), nil); sm.Ier != -2 || sm.P != 0 || len(sm.Spline.T) != 8 {
+		t.Errorf("accept: %+v", sm)
 	}
 	// Weights and the s ~ m - sqrt(2m) default of splrep with weights.
 	if sm, err := Splrep(x, y, 3, 0.01, &SplrepOptions{W: ones(40)}); err != nil || sm.Ier != 0 || sm.P <= 0 {

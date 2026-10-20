@@ -84,14 +84,22 @@ func fpgivs(piv, ww float64) (cs, sn, dd float64) {
 // instead of a division, a square root and two divisions. ww >= 0 is the
 // diagonal entry of the triangle. The result differs from fpgivs by
 // rounding only.
+//
+// The fast form is exact to rounding whenever 1e-140 < dd < 1e150: then no
+// square overflows, the larger square is normal and a denormal smaller one
+// is below the rounding of the sum. Callers check that range with
+// givensOK and fall back to fpgivsSlow, which keeps the hot loop free of
+// the long form (and inlinable).
 func givens(piv, ww float64) (cs, sn, dd float64) {
-	if ap := math.Abs(piv); ap > 1e-100 && ap < 1e100 && ww < 1e100 {
-		dd = math.Sqrt(float64(piv*piv) + float64(ww*ww))
-		inv := 1 / dd
-		return ww * inv, piv * inv, dd
-	}
-	return fpgivs(piv, ww)
+	dd = math.Sqrt(float64(piv*piv) + float64(ww*ww))
+	inv := 1 / dd
+	return ww * inv, piv * inv, dd
 }
+
+func givensOK(dd float64) bool { return dd > 1e-140 && dd < 1e150 }
+
+//go:noinline
+func fpgivsSlow(piv, ww float64) (cs, sn, dd float64) { return fpgivs(piv, ww) }
 
 // fpback solves the upper triangular band system a*c = z of n rows and
 // bandwidth bw (row-major, stride bw); c may alias z.
@@ -205,50 +213,24 @@ func recips(t []float64, k, ell int, r []float64) {
 	}
 }
 
-// basisRecip is fpbspl (basis with nu = 0) with the reciprocals of recips.
+// basisRecip is fpbspl (basis with nu = 0) with the reciprocals of recips
+// (givensLsq3 has it unrolled for k = 3).
 func basisRecip(t []float64, x float64, k, ell int, r, h []float64) {
-	switch k {
-	case 3:
-		t0, t1, t2, t3 := t[ell-2], t[ell-1], t[ell], t[ell+1]
-		t4, t5 := t[ell+2], t[ell+3]
-		// j = 1
-		f := r[0]
-		h0 := float64(f * (t3 - x))
-		h1 := float64(f * (x - t2))
-		// j = 2
-		f = h0 * r[1]
-		g0 := float64(f * (t3 - x))
-		g1 := float64(f * (x - t1))
-		f = h1 * r[2]
-		g1 += float64(f * (t4 - x))
-		g2 := float64(f * (x - t2))
-		// j = 3
-		f = g0 * r[3]
-		h[0] = float64(f * (t3 - x))
-		e1 := float64(f * (x - t0))
-		f = g1 * r[4]
-		h[1] = e1 + float64(f*(t4-x))
-		e2 := float64(f * (x - t1))
-		f = g2 * r[5]
-		h[2] = e2 + float64(f*(t5-x))
-		h[3] = float64(f * (x - t2))
-	default:
-		h[0] = 1
-		idx := 0
-		for j := 1; j <= k; j++ {
-			old := h[0]
-			h[0] = 0
-			for n := 1; n <= j; n++ {
-				next := 0.0
-				if n < j {
-					next = h[n]
-				}
-				w := old * r[idx]
-				idx++
-				h[n-1] += float64(w * (t[ell+n] - x))
-				h[n] = float64(w * (x - t[ell+n-j]))
-				old = next
+	h[0] = 1
+	idx := 0
+	for j := 1; j <= k; j++ {
+		old := h[0]
+		h[0] = 0
+		for n := 1; n <= j; n++ {
+			next := 0.0
+			if n < j {
+				next = h[n]
 			}
+			w := old * r[idx]
+			idx++
+			h[n-1] += float64(w * (t[ell+n] - x))
+			h[n] = float64(w * (x - t[ell+n-j]))
+			old = next
 		}
 	}
 }
@@ -259,6 +241,14 @@ func basisRecip(t []float64, x float64, k, ell int, r, h []float64) {
 // stores the unweighted B-spline values of every point in q (row-major,
 // stride k+1) and returns fp, the sum of squared residuals.
 func givensLsq(x, y, w, t []float64, k int, a, z, q []float64) float64 {
+	if k == 3 {
+		return givensLsq3(x, y, w, t, a, z, q)
+	}
+	return givensLsqK(x, y, w, t, k, a, z, q)
+}
+
+// givensLsqK is givensLsq for any degree.
+func givensLsqK(x, y, w, t []float64, k int, a, z, q []float64) float64 {
 	k1 := k + 1
 	nk1 := len(t) - k1
 	clear(z[:nk1])
@@ -290,6 +280,9 @@ func givensLsq(x, y, w, t []float64, k int, a, z, q []float64) float64 {
 			row := ell - k + i
 			ar := a[row*k1 : row*k1+k1]
 			cs, sn, dd := givens(piv, ar[0])
+			if !givensOK(dd) {
+				cs, sn, dd = fpgivsSlow(piv, ar[0])
+			}
 			ar[0] = dd
 			yi, z[row] = float64(cs*yi)-float64(sn*z[row]), float64(cs*z[row])+float64(sn*yi)
 			for i1, i2 := i+1, 1; i1 < k1; i1, i2 = i1+1, i2+1 {
@@ -301,10 +294,100 @@ func givensLsq(x, y, w, t []float64, k int, a, z, q []float64) float64 {
 	return fp
 }
 
+// givensLsq3 is givensLsq for k = 3 with the row held in named scalars, so
+// that each rotation feeds the next through registers (an array would go
+// through memory and add a store-to-load delay to the dependency chain).
+// The arithmetic is the same as givensLsq's, operation for operation.
+func givensLsq3(x, y, w, t []float64, a, z, q []float64) float64 {
+	nk1 := len(t) - 4
+	clear(z[:nk1])
+	clear(a[:nk1*4])
+	var rc [15]float64
+	fp := 0.0
+	ell := 3
+	recips(t, 3, ell, rc[:])
+	for it := range x {
+		xi, wi := x[it], w[it]
+		yi := y[it] * wi
+		if !(xi < t[ell+1] || ell == nk1-1) {
+			for !(xi < t[ell+1] || ell == nk1-1) {
+				ell++
+			}
+			recips(t, 3, ell, rc[:])
+		}
+		// basisRecip for k = 3, inline.
+		tk := t[ell-2 : ell+4 : ell+4]
+		t0, t1, t2, t3, t4, t5 := tk[0], tk[1], tk[2], tk[3], tk[4], tk[5]
+		f := rc[0]
+		e0 := float64(f * (t3 - xi))
+		e1 := float64(f * (xi - t2))
+		f = e0 * rc[1]
+		g0 := float64(f * (t3 - xi))
+		g1 := float64(f * (xi - t1))
+		f = e1 * rc[2]
+		g1 += float64(f * (t4 - xi))
+		g2 := float64(f * (xi - t2))
+		f = g0 * rc[3]
+		b0 := float64(f * (t3 - xi))
+		b1 := float64(f * (xi - t0))
+		f = g1 * rc[4]
+		b1 += float64(f * (t4 - xi))
+		b2 := float64(f * (xi - t1))
+		f = g2 * rc[5]
+		b2 += float64(f * (t5 - xi))
+		b3 := float64(f * (xi - t2))
+		qr := q[it*4 : it*4+4 : it*4+4]
+		qr[0], qr[1], qr[2], qr[3] = b0, b1, b2, b3
+		h0, h1, h2, h3 := b0*wi, b1*wi, b2*wi, b3*wi
+		r0 := ell - 3
+		ar := a[r0*4 : r0*4+16 : r0*4+16]
+		zr := z[r0 : r0+4 : r0+4]
+		if h0 != 0 {
+			cs, sn, dd := givens(h0, ar[0])
+			if !givensOK(dd) {
+				cs, sn, dd = fpgivsSlow(h0, ar[0])
+			}
+			ar[0] = dd
+			yi, zr[0] = float64(cs*yi)-float64(sn*zr[0]), float64(cs*zr[0])+float64(sn*yi)
+			h1, ar[1] = float64(cs*h1)-float64(sn*ar[1]), float64(cs*ar[1])+float64(sn*h1)
+			h2, ar[2] = float64(cs*h2)-float64(sn*ar[2]), float64(cs*ar[2])+float64(sn*h2)
+			h3, ar[3] = float64(cs*h3)-float64(sn*ar[3]), float64(cs*ar[3])+float64(sn*h3)
+		}
+		if h1 != 0 {
+			cs, sn, dd := givens(h1, ar[4])
+			if !givensOK(dd) {
+				cs, sn, dd = fpgivsSlow(h1, ar[4])
+			}
+			ar[4] = dd
+			yi, zr[1] = float64(cs*yi)-float64(sn*zr[1]), float64(cs*zr[1])+float64(sn*yi)
+			h2, ar[5] = float64(cs*h2)-float64(sn*ar[5]), float64(cs*ar[5])+float64(sn*h2)
+			h3, ar[6] = float64(cs*h3)-float64(sn*ar[6]), float64(cs*ar[6])+float64(sn*h3)
+		}
+		if h2 != 0 {
+			cs, sn, dd := givens(h2, ar[8])
+			if !givensOK(dd) {
+				cs, sn, dd = fpgivsSlow(h2, ar[8])
+			}
+			ar[8] = dd
+			yi, zr[2] = float64(cs*yi)-float64(sn*zr[2]), float64(cs*zr[2])+float64(sn*yi)
+			h3, ar[9] = float64(cs*h3)-float64(sn*ar[9]), float64(cs*ar[9])+float64(sn*h3)
+		}
+		if h3 != 0 {
+			cs, sn, dd := givens(h3, ar[12])
+			if !givensOK(dd) {
+				cs, sn, dd = fpgivsSlow(h3, ar[12])
+			}
+			ar[12] = dd
+			yi, zr[3] = float64(cs*yi)-float64(sn*zr[3]), float64(cs*zr[3])+float64(sn*yi)
+		}
+		fp += float64(yi * yi)
+	}
+	return fp
+}
+
 // fpcurf is FITPACK's fpcurf for iopt = 0 on validated input.
 func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoothing {
-	const tol, maxit = 1e-3, 20
-	const con1, con9, con4 = 0.1, 0.9, 0.04
+	const tol = 1e-3
 	m := len(x)
 	k1, k2 := k+1, k+2
 	nmin, nmax := 2*k1, m+k1
@@ -326,7 +409,7 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 		interpKnots(x, t, k)
 	}
 	var h [8]float64
-	result :=func(p float64) *Smoothing {
+	result := func(p float64) *Smoothing {
 		nk1 := n - k1
 		tt := append([]float64(nil), t[:n]...)
 		cc := append([]float64(nil), c[:nk1]...)
@@ -426,16 +509,13 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 	b := make([]float64, nest*k2)
 	g := make([]float64, nest*k2)
 	fpdisc(t, n, k, b)
-	p1, f1 := 0.0, fp0-s
-	p3, f3 := -1.0, fpms
-	p := 0.0
+	p0 := 0.0
 	for i := 0; i < nk1; i++ {
-		p += a[i*k1]
+		p0 += a[i*k1]
 	}
-	p = float64(nk1) / p
-	ich1, ich3 := 0, 0
+	p0 = float64(nk1) / p0
 	n8 := n - nmin
-	for iter := 1; ; iter++ {
+	ier, p := fitpackRoot(func(p float64) float64 {
 		pinv := 1 / p
 		for i := 0; i < nk1; i++ {
 			c[i] = z[i]
@@ -484,13 +564,27 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 			term = w[it] * (term - y[it])
 			fp += float64(term * term)
 		}
-		fpms = fp - s
+		return fp - s
+	}, p0, fp0-s, fpms, acc)
+	return result(p)
+}
+
+// fitpackRoot is the iteration of fpcurf's part 2: it finds the root of the
+// decreasing f(p) = fp(p) - s by rational interpolation, from p and the
+// brackets (0, f1) and (infinity, f3), and returns FITPACK's status (0, 2
+// or 3) with the p of the last evaluation of f.
+func fitpackRoot(f func(float64) float64, p, f1, f3, acc float64) (int, float64) {
+	const maxit = 20
+	const con1, con9, con4 = 0.1, 0.9, 0.04
+	p1, p3 := 0.0, -1.0
+	ich1, ich3 := 0, 0
+	for iter := 1; ; iter++ {
+		fpms := f(p)
 		if math.Abs(fpms) < acc {
-			return result(p)
+			return 0, p
 		}
 		if iter == maxit {
-			ier = 3
-			return result(p)
+			return 3, p
 		}
 		p2, f2 := p, fpms
 		if ich3 == 0 {
@@ -522,8 +616,7 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 			}
 		}
 		if f2 >= f1 || f2 <= f3 {
-			ier = 2
-			return result(p)
+			return 2, p
 		}
 		p = fpratiFitpack(p1, f1, p2, f2, p3, f3)
 		if f2 < 0 {
