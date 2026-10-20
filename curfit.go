@@ -79,6 +79,20 @@ func fpgivs(piv, ww float64) (cs, sn, dd float64) {
 	return ww / dd, piv / dd, dd
 }
 
+// givens is fpgivs with a shorter dependency chain where squaring cannot
+// overflow or lose the pivot: dd = sqrt(piv^2 + ww^2) and one reciprocal,
+// instead of a division, a square root and two divisions. ww >= 0 is the
+// diagonal entry of the triangle. The result differs from fpgivs by
+// rounding only.
+func givens(piv, ww float64) (cs, sn, dd float64) {
+	if ap := math.Abs(piv); ap > 1e-100 && ap < 1e100 && ww < 1e100 {
+		dd = math.Sqrt(float64(piv*piv) + float64(ww*ww))
+		inv := 1 / dd
+		return ww * inv, piv * inv, dd
+	}
+	return fpgivs(piv, ww)
+}
+
 // fpback solves the upper triangular band system a*c = z of n rows and
 // bandwidth bw (row-major, stride bw); c may alias z.
 func fpback(a, z []float64, n, bw int, c []float64) {
@@ -172,6 +186,121 @@ func interpKnots(x, t []float64, k int) {
 	}
 }
 
+// recips stores the reciprocals of the knot differences t[ell+i]-t[ell+i-j]
+// (j = 1..k, i = 1..j, in that order) that the de Boor-Cox recursion
+// divides by on knot interval ell, 0 for a zero difference. All the points
+// of one interval share them, so the recursion multiplies instead of
+// dividing: one rounding more per step than fpbspl, and no division chain.
+func recips(t []float64, k, ell int, r []float64) {
+	idx := 0
+	for j := 1; j <= k; j++ {
+		for i := 1; i <= j; i++ {
+			d := t[ell+i] - t[ell+i-j]
+			r[idx] = 0
+			if d != 0 {
+				r[idx] = 1 / d
+			}
+			idx++
+		}
+	}
+}
+
+// basisRecip is fpbspl (basis with nu = 0) with the reciprocals of recips.
+func basisRecip(t []float64, x float64, k, ell int, r, h []float64) {
+	switch k {
+	case 3:
+		t0, t1, t2, t3 := t[ell-2], t[ell-1], t[ell], t[ell+1]
+		t4, t5 := t[ell+2], t[ell+3]
+		// j = 1
+		f := r[0]
+		h0 := float64(f * (t3 - x))
+		h1 := float64(f * (x - t2))
+		// j = 2
+		f = h0 * r[1]
+		g0 := float64(f * (t3 - x))
+		g1 := float64(f * (x - t1))
+		f = h1 * r[2]
+		g1 += float64(f * (t4 - x))
+		g2 := float64(f * (x - t2))
+		// j = 3
+		f = g0 * r[3]
+		h[0] = float64(f * (t3 - x))
+		e1 := float64(f * (x - t0))
+		f = g1 * r[4]
+		h[1] = e1 + float64(f*(t4-x))
+		e2 := float64(f * (x - t1))
+		f = g2 * r[5]
+		h[2] = e2 + float64(f*(t5-x))
+		h[3] = float64(f * (x - t2))
+	default:
+		h[0] = 1
+		idx := 0
+		for j := 1; j <= k; j++ {
+			old := h[0]
+			h[0] = 0
+			for n := 1; n <= j; n++ {
+				next := 0.0
+				if n < j {
+					next = h[n]
+				}
+				w := old * r[idx]
+				idx++
+				h[n-1] += float64(w * (t[ell+n] - x))
+				h[n] = float64(w * (x - t[ell+n-j]))
+				old = next
+			}
+		}
+	}
+}
+
+// givensLsq is the first half of an fpcurf pass: the least-squares spline
+// on knots t (len n) reduced row by row by Givens rotations into the band a
+// (row-major, stride k+1) and right-hand side z, which it clears first. It
+// stores the unweighted B-spline values of every point in q (row-major,
+// stride k+1) and returns fp, the sum of squared residuals.
+func givensLsq(x, y, w, t []float64, k int, a, z, q []float64) float64 {
+	k1 := k + 1
+	nk1 := len(t) - k1
+	clear(z[:nk1])
+	clear(a[:nk1*k1])
+	var h [8]float64
+	var rc [15]float64
+	fp := 0.0
+	ell := k
+	recips(t, k, ell, rc[:])
+	for it := range x {
+		xi, wi := x[it], w[it]
+		yi := y[it] * wi
+		if !(xi < t[ell+1] || ell == nk1-1) {
+			for !(xi < t[ell+1] || ell == nk1-1) {
+				ell++
+			}
+			recips(t, k, ell, rc[:])
+		}
+		qr := q[it*k1 : it*k1+k1]
+		basisRecip(t, xi, k, ell, rc[:], qr)
+		for i := 0; i < k1; i++ {
+			h[i] = qr[i] * wi
+		}
+		for i := 0; i < k1; i++ {
+			piv := h[i]
+			if piv == 0 {
+				continue
+			}
+			row := ell - k + i
+			ar := a[row*k1 : row*k1+k1]
+			cs, sn, dd := givens(piv, ar[0])
+			ar[0] = dd
+			yi, z[row] = float64(cs*yi)-float64(sn*z[row]), float64(cs*z[row])+float64(sn*yi)
+			for i1, i2 := i+1, 1; i1 < k1; i1, i2 = i1+1, i2+1 {
+				h[i1], ar[i2] = float64(cs*h[i1])-float64(sn*ar[i2]), float64(cs*ar[i2])+float64(sn*h[i1])
+			}
+		}
+		fp += float64(yi * yi)
+	}
+	return fp
+}
+
 // fpcurf is FITPACK's fpcurf for iopt = 0 on validated input.
 func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoothing {
 	const tol, maxit = 1e-3, 20
@@ -197,7 +326,7 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 		interpKnots(x, t, k)
 	}
 	var h [8]float64
-	result := func(p float64) *Smoothing {
+	result :=func(p float64) *Smoothing {
 		nk1 := n - k1
 		tt := append([]float64(nil), t[:n]...)
 		cc := append([]float64(nil), c[:nk1]...)
@@ -214,42 +343,7 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 			t[j] = xb
 			t[n-1-j] = xe
 		}
-		// Least-squares spline by Givens rotations, row by row.
-		fp = 0
-		clear(z[:nk1])
-		clear(a[:nk1*k1])
-		ell := k
-		for it := 0; it < m; it++ {
-			xi, wi := x[it], w[it]
-			yi := y[it] * wi
-			for !(xi < t[ell+1] || ell == nk1-1) {
-				ell++
-			}
-			basis(t, xi, k, ell, 0, h[:])
-			qr := q[it*k1 : it*k1+k1]
-			for i := 0; i < k1; i++ {
-				qr[i] = h[i]
-				h[i] *= wi
-			}
-			for i := 0; i < k1; i++ {
-				piv := h[i]
-				if piv == 0 {
-					continue
-				}
-				row := ell - k + i
-				ar := a[row*k1 : row*k1+k1]
-				cs, sn, dd := fpgivs(piv, ar[0])
-				ar[0] = dd
-				yi, z[row] = float64(cs*yi)-float64(sn*z[row]), float64(cs*z[row])+float64(sn*yi)
-				if i == k {
-					break
-				}
-				for i1, i2 := i+1, 1; i1 < k1; i1, i2 = i1+1, i2+1 {
-					h[i1], ar[i2] = float64(cs*h[i1])-float64(sn*ar[i2]), float64(cs*ar[i2])+float64(sn*h[i1])
-				}
-			}
-			fp += float64(yi * yi)
-		}
+		fp = givensLsq(x, y, w, t[:n], k, a, z, q)
 		if ier == -2 {
 			fp0 = fp
 		}
