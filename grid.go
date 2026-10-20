@@ -103,6 +103,25 @@ func MakeNdInterp(axes [][]float64, values []float64, k ...int) (_ *NdBSpline, e
 		must(m.factor())
 		line := make([]float64, n)
 		outer := len(c) / (n * strides[d])
+		if strides[d] > 1 {
+			// The lines of this axis are columns of n x stride blocks:
+			// solve each block row-wise instead of gathering columns.
+			for o := 0; o < outer; o++ {
+				m.solveRows(c[o*n*strides[d]:(o+1)*n*strides[d]], strides[d])
+			}
+			continue
+		}
+		if outer > 1 {
+			// The last axis: its lines are the rows of an outer x n matrix.
+			// Transposed, they become columns that solveRows handles
+			// together, which hides the latency of each line's division
+			// chain behind the others.
+			buf := make([]float64, len(c))
+			transpose(buf, c, outer, n)
+			m.solveRows(buf, outer)
+			transpose(c, buf, n, outer)
+			continue
+		}
 		for o := 0; o < outer; o++ {
 			for in := 0; in < strides[d]; in++ {
 				base := o*n*strides[d] + in
@@ -117,6 +136,24 @@ func MakeNdInterp(axes [][]float64, values []float64, k ...int) (_ *NdBSpline, e
 		}
 	}
 	return &NdBSpline{T: ts, K: ks, Shape: shape, C: c}, nil
+}
+
+// transpose writes the transpose of the r x c row-major matrix src into dst
+// (c x r), in tiles so that both sides stay in cache.
+func transpose(dst, src []float64, r, c int) {
+	const tile = 32
+	for i0 := 0; i0 < r; i0 += tile {
+		i1 := min(i0+tile, r)
+		for j0 := 0; j0 < c; j0 += tile {
+			j1 := min(j0+tile, c)
+			for i := i0; i < i1; i++ {
+				row := src[i*c : (i+1)*c]
+				for j := j0; j < j1; j++ {
+					dst[j*r+i] = row[j]
+				}
+			}
+		}
+	}
 }
 
 // EvalNu evaluates the spline at the points xi (len(dst) points of d

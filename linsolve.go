@@ -275,6 +275,57 @@ func (m *bandLU) solve(b []float64) {
 	}
 }
 
+// solveRows solves A X = B for s right-hand sides at once, B stored as the
+// n rows of c (row i is c[i*s:(i+1)*s]), overwriting c with X. Every column
+// goes through exactly the operations solve applies to it, in the same
+// order (zero entries skipped in the back substitution as solve skips
+// them), so each column of X is bit-identical to solve's result; walking
+// the rows contiguously is what makes it faster than gathering columns.
+func (m *bandLU) solveRows(c []float64, s int) {
+	n, kl, ku, w := m.n, m.kl, m.ku, m.w
+	for j := 0; j < n; j++ {
+		rj := c[j*s : (j+1)*s : (j+1)*s]
+		if p := m.piv[j]; p != j {
+			rp := c[p*s : (p+1)*s : (p+1)*s]
+			for k := range rj {
+				rj[k], rp[k] = rp[k], rj[k]
+			}
+		}
+		last := min(j+kl, n-1)
+		lm := m.lm[j*kl : (j+1)*kl]
+		for i := j + 1; i <= last; i++ {
+			l := lm[i-j-1]
+			ri := c[i*s : (i+1)*s : (i+1)*s]
+			for k, v := range rj {
+				ri[k] -= float64(v * l)
+			}
+		}
+	}
+	col := make([]float64, kl+ku) // a[i][j] for the rows i the back substitution updates
+	rows := make([][]float64, kl+ku)
+	for j := n - 1; j >= 0; j-- {
+		d := m.a[j*w+kl]
+		lo := max(0, j-(kl+ku))
+		nu := j - lo
+		for q := 0; q < nu; q++ {
+			i := j - 1 - q
+			col[q] = m.a[i*w+j-i+kl]
+			rows[q] = c[i*s : (i+1)*s : (i+1)*s]
+		}
+		rj := c[j*s : (j+1)*s : (j+1)*s]
+		for k, v := range rj {
+			if v == 0 {
+				continue
+			}
+			v /= d
+			rj[k] = v
+			for q := 0; q < nu; q++ {
+				rows[q][k] -= float64(v * col[q])
+			}
+		}
+	}
+}
+
 // failure is the panic value of must; guard turns it back into an error at
 // the public entry points, so that internal solves that cannot fail for valid
 // input do not clutter every call with an error path.

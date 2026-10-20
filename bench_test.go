@@ -1,6 +1,9 @@
 package interp
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func benchData(n int) (x, y, xq []float64) { return perfDataPlain(n) }
 
@@ -41,6 +44,20 @@ func BenchmarkBSpline5Eval(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s.EvalAll(out, xq)
+	}
+}
+
+func BenchmarkBicubicConstruct(b *testing.B) {
+	xs := sortedX(nil, 200, 0, 10, false)
+	z := make([]float64, 200*200)
+	for i := range z {
+		z[i] = math.Sin(float64(i))
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := NewBicubic(xs, xs, z, 3, 3); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
