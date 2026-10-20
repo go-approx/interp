@@ -241,7 +241,10 @@ func goOps() []perfOp {
 			return map[string]float64{"construct": goTimeit(func() {
 				sm, _ := MakeSplrep(x, y, 3, s, nil)
 				sink += sm.Fp
-			}, 0)}
+			}, 0), "legacy": goTimeit(func() {
+				sm, _ := Splrep(x, y, 3, s, nil)
+				sink += sm.Fp
+			}, 0.05)}
 		}},
 		{"lsq", all, 7, func(n int) map[string]float64 {
 			x, y, _ := perfData(n)
@@ -363,9 +366,6 @@ func TestPerf(t *testing.T) {
 					continue
 				}
 				g := goR[phase]
-				if phase == "legacy" {
-					g = goR["construct"]
-				}
 				row := perfRow{op.name, phase, n, median(g), median(pyR[phase]), median(loads)}
 				rows = append(rows, row)
 				t.Logf("%-20s %-9s n=%-8d go %.3e s  scipy %.3e s  ratio %.2f  load %.0f", row.op, row.phase, row.n, row.goT, row.pyT, row.pyT/row.goT, row.load)
@@ -382,7 +382,7 @@ func TestPerf(t *testing.T) {
 	for _, r := range rows {
 		phase := r.phase
 		if phase == "legacy" {
-			phase = "construct (legacy splrep)"
+			phase = "construct (`Splrep` vs legacy `splrep`)"
 		}
 		fmt.Fprintf(&b, "| %s | %s | %d | %.3g | %.3g | %.2f | %.0f |\n", r.op, phase, r.n, r.goT, r.pyT, r.pyT/r.goT, r.load)
 	}

@@ -44,6 +44,16 @@ func BenchmarkPPolyEval(b *testing.B) {
 	}
 }
 
+func BenchmarkSplrepLegacy(b *testing.B) {
+	x, y, _ := benchData(100000)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := Splrep(x, y, 3, 100, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkInterpLinear(b *testing.B) {
 	x, y, xq := benchData(100000)
 	out := make([]float64, len(xq))
