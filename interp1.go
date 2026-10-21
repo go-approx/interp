@@ -269,11 +269,83 @@ func Interp(dst, x, xp, fp []float64, left, right float64) error {
 	if len(x) >= len(xp) {
 		sl = slopes(xp, fp)
 	}
-	hint := 0
-	for i, v := range x {
-		dst[i], hint = npInterp(v, xp, fp, left, right, hint, sl)
-	}
+	interpKernel(dst, x, xp, fp, left, right, sl)
 	return nil
+}
+
+// gallop returns j with xp[j] <= v < xp[j+1], given xp[lo] <= v <
+// xp[len(xp)-1]: it doubles its step from lo until it passes v, then
+// bisects the last step, so a query k intervals further costs about
+// 2 log2(k) compares instead of log2(n).
+func gallop(xp []float64, v float64, lo int) int {
+	n := len(xp)
+	step := 1
+	hi := lo + 1
+	for hi < n && xp[hi] <= v {
+		lo = hi
+		step *= 2
+		hi = lo + step
+	}
+	hi = min(hi, n)
+	for lo+1 < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if xp[mid] <= v {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+// interpKernel is npInterp over all of x. The common case — a query inside
+// [xp[0], xp[n-1]) in the interval of the previous one or the next — is
+// handled inline with the interval index kept in a register; every other
+// case (NaN, outside, the right end, a single node, a NaN result) goes
+// through npInterp, so the results are those of npInterp bit for bit.
+func interpKernel(dst, x, xp, fp []float64, left, right float64, sl []float64) {
+	n := len(xp)
+	if n == 1 {
+		for i, v := range x {
+			dst[i], _ = npInterp(v, xp, fp, left, right, 0, sl)
+		}
+		return
+	}
+	dst = dst[:len(x)]
+	fp = fp[:n]
+	lo, hi := xp[0], xp[n-1]
+	j := 0
+	for i, v := range x {
+		if !(v >= lo && v < hi) {
+			dst[i], _ = npInterp(v, xp, fp, left, right, j, sl)
+			continue
+		}
+		// Find j with xp[j] <= v < xp[j+1]; it exists in [0, n-2].
+		if !(xp[j] <= v) {
+			j = boundRight(xp, v, 0) - 1
+		} else if !(v < xp[j+1]) {
+			j++
+			if !(v < xp[j+1]) {
+				j = gallop(xp, v, j)
+			}
+		}
+		xj, fj := xp[j], fp[j]
+		if xj == v {
+			dst[i] = fj
+			continue
+		}
+		var s float64
+		if sl != nil {
+			s = sl[j]
+		} else {
+			s = (fp[j+1] - fj) / (xp[j+1] - xj)
+		}
+		r := math.FMA(s, v-xj, fj)
+		if r != r {
+			r, _ = npInterp(v, xp, fp, left, right, j, sl)
+		}
+		dst[i] = r
+	}
 }
 
 // EvalAll evaluates the interpolant at xq into dst.
@@ -285,6 +357,12 @@ func (f *Interp1D) EvalAll(dst, xq []float64) error {
 				return ErrBounds
 			}
 		}
+	}
+	if f.kind == Linear && !f.extrapolate && n > 1 {
+		// npInterp with the fill values as left/right is what the loop
+		// below computes for this kind, value for value.
+		interpKernel(dst, xq, f.x, f.y, f.below, f.above, f.slope)
+		return nil
 	}
 	hint := 0
 	for i, v := range xq {

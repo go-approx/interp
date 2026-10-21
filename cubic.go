@@ -298,9 +298,198 @@ func NewCubicSplineBC(x, y []float64, start, end BC) (p *PPoly, err error) {
 	return p, nil
 }
 
+// startRow is the first row of the slope system for a non-periodic start
+// condition: diagonal, super-diagonal and right-hand side.
+func startRow(x, y, dx, slope []float64, start BC) (di, du, b float64) {
+	if start.Kind == NotAKnot {
+		d := x[2] - x[0]
+		return dx[1], x[2] - x[0], (float64(float64((dx[0]+2*d)*dx[1])*slope[0]) + float64(float64(dx[0]*dx[0])*slope[1])) / d
+	}
+	if ord, v := start.order(); ord == 1 {
+		return 1, 0, v
+	} else {
+		return 2 * dx[0], dx[0], float64(float64(-0.5*v)*float64(dx[0]*dx[0])) + float64(3*(y[1]-y[0]))
+	}
+}
+
+// endRow is the last row for a non-periodic end condition: diagonal,
+// sub-diagonal and right-hand side.
+func endRow(x, y, dx, slope []float64, end BC) (di, dl, b float64) {
+	n := len(x)
+	if end.Kind == NotAKnot {
+		d := x[n-1] - x[n-3]
+		return dx[n-3], x[n-1] - x[n-3], (float64(float64(dx[n-2]*dx[n-2])*slope[n-3]) + float64(float64((2*d+dx[n-2])*dx[n-3])*slope[n-2])) / d
+	}
+	if ord, v := end.order(); ord == 1 {
+		return 1, 0, v
+	} else {
+		return 2 * dx[n-2], dx[n-2], float64(float64(0.5*v)*float64(dx[n-2]*dx[n-2])) + float64(3*(y[n-1]-y[n-2]))
+	}
+}
+
+// cubicSlopesFast is cubicSlopes for non-periodic conditions when no row
+// interchange is needed, which is the case of every node spacing with the
+// not-a-knot and second-derivative conditions: the rows are built as they
+// are eliminated (gtsv's fast path), so only the diagonal and the
+// right-hand side are stored, and the back substitution reads the
+// off-diagonals from dx. The operations are gtsv's, in its order, so the
+// result is bit-identical; it reports false (and the caller falls back to
+// cubicSlopes) at the first row that would need an interchange.
+func cubicSlopesFast(x, y, dx, slope []float64, start, end BC) ([]float64, bool) {
+	n := len(x)
+	d := make([]float64, n)
+	b := make([]float64, n)
+	d0, du0, b0 := startRow(x, y, dx, slope, start)
+	dn, dln, bn := endRow(x, y, dx, slope, end)
+	d[0], b[0] = d0, b0
+	dx = dx[:n-1]
+	slope = slope[:n-1]
+	// Row i+1 (1 <= i+1 <= n-2): diagonal 2*(dx[i]+dx[i+1]), right-hand
+	// side 3*(dx[i+1]*slope[i] + dx[i]*slope[i+1]), sub-diagonal entry
+	// dl[i] = dx[i+1]; du[i] is du0 for i = 0, dx[i-1] after.
+	du := du0
+	for i := 0; i < n-2; i++ {
+		dl := dx[i+1]
+		di := d[i]
+		if !(di != 0 && math.Abs(di) >= math.Abs(dl)) {
+			return nil, false
+		}
+		fact := dl / di
+		// The conversions round the row before the update: 3*(...) - p
+		// would otherwise fuse into one multiply-subtract.
+		dn1 := float64(2 * (dx[i] + dx[i+1]))
+		bn1 := float64(3 * (float64(dx[i+1]*slope[i]) + float64(dx[i]*slope[i+1])))
+		d[i+1] = dn1 - float64(fact*du)
+		b[i+1] = bn1 - float64(fact*b[i])
+		du = dx[i]
+	}
+	// The last elimination, with the end row.
+	if i := n - 2; !(d[i] != 0 && math.Abs(d[i]) >= math.Abs(dln)) {
+		return nil, false
+	} else {
+		fact := dln / d[i]
+		d[i+1] = dn - float64(fact*du)
+		b[i+1] = bn - float64(fact*b[i])
+	}
+	// gtsvBack with clean = n-1: every dl term is 0*b[i+2].
+	if d[n-1] == 0 {
+		return nil, false
+	}
+	b[n-1] /= d[n-1]
+	b[n-2] = (b[n-2] - float64(du*b[n-1])) / d[n-2]
+	var zero float64
+	for i := n - 3; i >= 0; i-- {
+		dui := du0
+		if i > 0 {
+			dui = dx[i-1]
+		}
+		b[i] = (b[i] - float64(dui*b[i+1]) - float64(zero*b[i+2])) / d[i]
+	}
+	return b, true
+}
+
+// twistMin is the number of nodes from which cubicSlopes eliminates from
+// both ends (cubicSlopesTwisted). Below it the solution is dgtsv's, bit for
+// bit, as SciPy computes it.
+const twistMin = 1024
+
+// cubicSlopesTwisted solves the slope system of a non-periodic spline by a
+// twisted factorization: Gaussian elimination runs down from the first row
+// and up from the last at the same time and meets in the middle row, and the
+// substitution then runs outwards from it. dgtsv's single elimination is one
+// chain of n dependent divisions forward and n backward; here the two halves
+// are independent chains of n/2 that the processor overlaps, which halves
+// the latency. The arithmetic per step is dgtsv's (no reciprocals); only
+// which row eliminates which changes, so the error is of the same order
+// (TestCubicTwistedAccuracy measures it against an exact solution). It
+// reports false when a step fails stablePivot, and the caller then uses
+// dgtsv, which pivots.
+func cubicSlopesTwisted(x, y, dx, slope []float64, start, end BC) ([]float64, bool) {
+	n := len(x)
+	d := make([]float64, n)
+	b := make([]float64, n)
+	d0, du0, b0 := startRow(x, y, dx, slope, start)
+	dn, dln, bn := endRow(x, y, dx, slope, end)
+	dx = dx[:n-1]
+	slope = slope[:n-1]
+	d[0], b[0] = d0, b0
+	for j := 1; j <= n-2; j++ {
+		d[j] = float64(2 * (dx[j-1] + dx[j]))
+		b[j] = float64(3 * (float64(dx[j]*slope[j-1]) + float64(dx[j-1]*slope[j])))
+	}
+	d[n-1], b[n-1] = dn, bn
+	// Off-diagonals: dl(i) = A[i+1][i], du(i) = A[i][i+1].
+	dl := func(i int) float64 {
+		if i == n-2 {
+			return dln
+		}
+		return dx[i+1]
+	}
+	du := func(i int) float64 {
+		if i == 0 {
+			return du0
+		}
+		return dx[i-1]
+	}
+	m := (n - 1) / 2 // the meeting row: m steps from the top, n-1-m from the bottom
+	for k := 0; k < n-1-m; k++ {
+		if k < m { // row k eliminates the sub-diagonal entry of row k+1
+			dk, l, u := d[k], dl(k), du(k)
+			if !stablePivot(dk, l, u) {
+				return nil, false
+			}
+			fact := l / dk
+			d[k+1] -= float64(fact * u)
+			b[k+1] -= float64(fact * b[k])
+		}
+		i := n - 1 - k // row i eliminates the super-diagonal entry of row i-1
+		di, u, l := d[i], du(i-1), dl(i-1)
+		if !stablePivot(di, u, l) {
+			return nil, false
+		}
+		fact := u / di
+		d[i-1] -= float64(fact * l)
+		b[i-1] -= float64(fact * b[i])
+	}
+	if d[m] == 0 {
+		return nil, false
+	}
+	b[m] /= d[m]
+	for k := 1; k <= n-1-m; k++ {
+		if i := m - k; i >= 0 {
+			b[i] = (b[i] - float64(du(i)*b[i+1])) / d[i]
+		}
+		i := m + k
+		b[i] = (b[i] - float64(dl(i-1)*b[i-1])) / d[i]
+	}
+	return b, true
+}
+
+// stablePivot reports whether the pivot p may eliminate the entry e of the
+// neighbouring row without an interchange, the pivot row's other
+// off-diagonal entry being o: either the multiplier e/p is at most 1 in
+// magnitude (dgtsv's own test) or the pivot row is diagonally dominant, so
+// that the update (e/p)*o is at most |e| in magnitude. Either way the
+// entries cannot grow, which is what keeps elimination without pivoting
+// stable.
+func stablePivot(p, e, o float64) bool {
+	a := math.Abs(p)
+	return p != 0 && (a >= math.Abs(e) || a >= math.Abs(o))
+}
+
 // cubicSlopes solves the tridiagonal system for the derivative at every node.
 func cubicSlopes(x, y, dx, slope []float64, start, end BC) []float64 {
 	n := len(x)
+	if start.Kind != Periodic {
+		if n >= twistMin {
+			if s, ok := cubicSlopesTwisted(x, y, dx, slope, start, end); ok {
+				return s
+			}
+		}
+		if s, ok := cubicSlopesFast(x, y, dx, slope, start, end); ok {
+			return s
+		}
+	}
 	// One pass builds the three diagonals and the right-hand side:
 	// du[j] = A[j][j+1], di[j] = A[j][j], dl[j] = A[j+1][j].
 	du := make([]float64, n-1)
@@ -316,40 +505,8 @@ func cubicSlopes(x, y, dx, slope []float64, start, end BC) []float64 {
 	if start.Kind == Periodic {
 		return cubicPeriodic(dx, slope, du, di, dl, b)
 	}
-	switch start.Kind {
-	case NotAKnot:
-		di[0] = dx[1]
-		du[0] = x[2] - x[0]
-		d := x[2] - x[0]
-		b[0] = (float64(float64((dx[0]+2*d)*dx[1])*slope[0]) + float64(float64(dx[0]*dx[0])*slope[1])) / d
-	default:
-		if ord, v := start.order(); ord == 1 {
-			di[0] = 1
-			du[0] = 0
-			b[0] = v
-		} else {
-			di[0] = 2 * dx[0]
-			du[0] = dx[0]
-			b[0] = float64(float64(-0.5*v)*float64(dx[0]*dx[0])) + float64(3*(y[1]-y[0]))
-		}
-	}
-	switch end.Kind {
-	case NotAKnot:
-		di[n-1] = dx[n-3]
-		dl[n-2] = x[n-1] - x[n-3]
-		d := x[n-1] - x[n-3]
-		b[n-1] = (float64(float64(dx[n-2]*dx[n-2])*slope[n-3]) + float64(float64((2*d+dx[n-2])*dx[n-3])*slope[n-2])) / d
-	default:
-		if ord, v := end.order(); ord == 1 {
-			di[n-1] = 1
-			dl[n-2] = 0
-			b[n-1] = v
-		} else {
-			di[n-1] = 2 * dx[n-2]
-			dl[n-2] = dx[n-2]
-			b[n-1] = float64(float64(0.5*v)*float64(dx[n-2]*dx[n-2])) + float64(3*(y[n-1]-y[n-2]))
-		}
-	}
+	di[0], du[0], b[0] = startRow(x, y, dx, slope, start)
+	di[n-1], dl[n-2], b[n-1] = endRow(x, y, dx, slope, end)
 	must(gtsv(dl, di, du, b))
 	return b
 }

@@ -141,6 +141,10 @@ func (b *BSpline) EvalNu(dst, xs []float64, nu int) {
 		}
 		return
 	}
+	if nu == 0 && b.Extrap != Wrap && (k == 3 || k == 5) {
+		b.evalUnrolled(dst, xs)
+		return
+	}
 	tb, te := b.T[k], b.T[n]
 	hint := k
 	for i, x := range xs {
@@ -158,6 +162,93 @@ func (b *BSpline) EvalNu(dst, xs []float64, nu int) {
 		for a := 0; a <= k; a++ {
 			s += float64(b.C[ell+a-k] * h[a])
 		}
+		dst[i] = s
+	}
+}
+
+// negZero is -0: adding it leaves every value, -0 included, unchanged, which
+// is what basis does when it skips a zero-width knot interval.
+var negZero = math.Copysign(0, -1)
+
+// deBoorStep is one division of the de Boor-Cox recursion in basis: the
+// B-spline value old of the previous degree split between the knots xa and
+// xb, as the contribution to the left entry (l) and the new right entry
+// (r). A zero-width interval contributes nothing (l = -0, r = 0), as in
+// basis. The conversions keep each product rounded (no fused multiply-add),
+// as basis does.
+func deBoorStep(old, xb, xa, x float64) (l, r float64) {
+	if xb == xa {
+		return negZero, 0
+	}
+	w := old / (xb - xa)
+	return float64(w * (xb - x)), float64(w * (x - xa))
+}
+
+// evalUnrolled is EvalNu for nu = 0, degrees 3 and 5 and every extrapolation
+// mode but Wrap, with the recursion of basis unrolled into named scalars (an
+// array round trip per step costs a store-to-load delay). It performs the
+// same operations in the same order as basis, so the results are identical.
+func (b *BSpline) evalUnrolled(dst, xs []float64) {
+	k := b.K
+	t, c := b.T, b.C
+	n := b.N()
+	tb, te := t[k], t[n]
+	nanOutside := b.Extrap == NaNOutside
+	hint := k
+	dst = dst[:len(xs)]
+	for i, x := range xs {
+		if x != x || (nanOutside && (x < tb || x > te)) {
+			dst[i] = math.NaN()
+			continue
+		}
+		ell := hint
+		if !(x >= t[ell] && x < t[ell+1]) {
+			ell = findKnotInterval(t, k, x, hint)
+			hint = ell
+		}
+		// degree 1
+		l1, r1 := deBoorStep(1, t[ell+1], t[ell], x)
+		h0, h1 := 0+l1, r1
+		// degree 2
+		la, ra := deBoorStep(h0, t[ell+1], t[ell-1], x)
+		lb, rb := deBoorStep(h1, t[ell+2], t[ell], x)
+		h0, h1, h2 := 0+la, ra+lb, rb
+		// degree 3
+		la, ra = deBoorStep(h0, t[ell+1], t[ell-2], x)
+		lb, rb = deBoorStep(h1, t[ell+2], t[ell-1], x)
+		lc, rc := deBoorStep(h2, t[ell+3], t[ell], x)
+		h0, h1, h2, h3 := 0+la, ra+lb, rb+lc, rc
+		if k == 3 {
+			cs := c[ell-3 : ell+1 : ell+1]
+			s := 0.0
+			s += float64(cs[0] * h0)
+			s += float64(cs[1] * h1)
+			s += float64(cs[2] * h2)
+			s += float64(cs[3] * h3)
+			dst[i] = s
+			continue
+		}
+		// degree 4
+		la, ra = deBoorStep(h0, t[ell+1], t[ell-3], x)
+		lb, rb = deBoorStep(h1, t[ell+2], t[ell-2], x)
+		lc, rc = deBoorStep(h2, t[ell+3], t[ell-1], x)
+		ld, rd := deBoorStep(h3, t[ell+4], t[ell], x)
+		h0, h1, h2, h3, h4 := 0+la, ra+lb, rb+lc, rc+ld, rd
+		// degree 5
+		la, ra = deBoorStep(h0, t[ell+1], t[ell-4], x)
+		lb, rb = deBoorStep(h1, t[ell+2], t[ell-3], x)
+		lc, rc = deBoorStep(h2, t[ell+3], t[ell-2], x)
+		ld, rd = deBoorStep(h3, t[ell+4], t[ell-1], x)
+		le, re := deBoorStep(h4, t[ell+5], t[ell], x)
+		h0, h1, h2, h3, h4, h5 := 0+la, ra+lb, rb+lc, rc+ld, rd+le, re
+		cs := c[ell-5 : ell+1 : ell+1]
+		s := 0.0
+		s += float64(cs[0] * h0)
+		s += float64(cs[1] * h1)
+		s += float64(cs[2] * h2)
+		s += float64(cs[3] * h3)
+		s += float64(cs[4] * h4)
+		s += float64(cs[5] * h5)
 		dst[i] = s
 	}
 }

@@ -52,6 +52,19 @@ func ExampleMakeSplrep() {
 	// Output: true true
 }
 
+func ExampleSplrep() {
+	x := make([]float64, 50)
+	y := make([]float64, 50)
+	for i := range x {
+		x[i] = float64(i) / 49 * 6
+		y[i] = math.Sin(x[i]) + 0.01*math.Cos(97*x[i])
+	}
+	// The knots scipy.interpolate.splrep(x, y, s=0.01) chooses.
+	sm, _ := interp.Splrep(x, y, 3, 0.01, nil)
+	fmt.Println(sm.Ier, math.Abs(sm.Fp-0.01) < 0.01*0.001)
+	// Output: 0 true
+}
+
 func ExampleInterp1() {
 	x := []float64{1, 2, 3}
 	v := []float64{10, 20, 15}

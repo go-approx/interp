@@ -30,7 +30,8 @@ sm, _ := interp.MakeSplrep(x, y, 3, 0.05, nil)      // FITPACK smoothing spline
 | `NewAkima(x, y, false)` / `(x, y, true)` | `Akima1DInterpolator` / `method="makima"` | `makima` |
 | `MakeInterpSpline` (any degree, not-a-knot / clamped / natural / derivative lists / user knots / periodic), `BSpline` (de Boor evaluation, derivatives, antiderivatives, integrals, extrapolation modes), `NewDesignMatrix` | `make_interp_spline`, `BSpline`, `BSpline.design_matrix` | `spapi`, `fnval`, `fnder`, `fnint` (Curve Fitting) |
 | `MakeLsqSpline` | `make_lsq_spline` | `spap2` |
-| `MakeSplrep` (FITPACK smoothing: automatic knots, smoothing factor `s`, weights, user knots, `nest`) | `make_splrep`, `splrep`, `UnivariateSpline` | `spaps`, `csaps` (different penalty) |
+| `MakeSplrep` (FITPACK smoothing: automatic knots, smoothing factor `s`, weights, user knots, `nest`) | `make_splrep`, `UnivariateSpline` | `spaps`, `csaps` (different penalty) |
+| `Splrep` (FITPACK `curfit` itself: the legacy knot placement of `fpknot`, weights, bounds, `nest`, FITPACK's `ier`) | `splrep` | |
 | `NewRGI`, `Interpn` (`linear`, `nearest`, `slinear`, `cubic`, `quintic`; bounds error / fill / extrapolate) | `RegularGridInterpolator`, `interpn` | `interpn`, `griddedInterpolant` (`linear`, `nearest`, `spline`) |
 | `MakeNdInterp`, `NdBSpline` (tensor-product splines, derivatives per axis) | `make_ndbspl`, `NdBSpline` | |
 | `NewBicubic` (any degrees, derivatives, clamping outside the grid) | `RectBivariateSpline(..., s=0)` | `interp2(..., 'spline')` |
@@ -88,6 +89,17 @@ same maths, not against Octave.
   solves the full sparse system with an iterative solver by default.
 - `RectBivariateSpline` smoothing (`s > 0`, FITPACK `regrid`/`surfit`) is not
   provided, nor is the periodic smoothing spline of `make_splrep`.
+- `Splrep` places exactly the knots of SciPy's `splrep` (identical knot vectors
+  on all 166 fixture fits) but computes its least-squares solve with
+  multiplications by per-interval reciprocals in the B-spline recursion and
+  `sqrt(a²+b²)` Givens rotations instead of FITPACK's scaled form; against an
+  exact 256-bit solution its error is 2.6–12x smaller than FITPACK's
+  arithmetic. It rejects NaN data and user knots (`MakeSplrep` takes them).
+- From 1024 nodes, the slope system of `NewCubicSpline` (non-periodic) is
+  eliminated from both ends at once (twisted factorization) instead of
+  `dgtsv`'s single sweep; the error against an exact solution is the same or
+  smaller, but the last bits can differ from SciPy. Below 1024 nodes the
+  result is `dgtsv`'s, bit for bit.
 
 ## Performance
 
@@ -95,23 +107,23 @@ same maths, not against Octave.
 points, Go against SciPy on one core, interleaved rounds, with the load average
 of the host. It states the load it was taken at; the host is shared.
 
-Measured 2026-10-19 (load 3–5): faster than SciPy on PCHIP, Akima/makima,
-cubic evaluation, periodic cubic construction (1.4–4.7x), nearest-neighbour
-interp1d, `make_splrep` (2x), least-squares splines (3–1700x) and every
-`RegularGridInterpolator` construction (13–107x).
+Measured 2026-10-19 (load 3–5) and, for the rows the second performance pass
+touched, 2026-10-21 (load 5–7): faster than SciPy on PCHIP, Akima/makima,
+cubic construction (1.3–4x) and evaluation (2–2.7x), periodic cubic
+construction (1.4–4.7x), B-spline evaluation (cubic 1.75–3.6x, quintic
+1.95–2.4x), `numpy.interp` (1.2–2x) and linear `interp1d` (1.4–2.5x),
+nearest-neighbour interp1d, `make_splrep` (2x), the legacy `splrep` with
+`Splrep` (2.8–2.9x), least-squares splines (3–1700x), every
+`RegularGridInterpolator` construction (13–107x) and `RectBivariateSpline`
+construction (2.1–2.5x) and evaluation (1.6–2.6x, measured under a load of
+34; the ratios matched a run at load 10).
 
-**Open defects — still slower than the reference:**
-- `splrep` against SciPy's legacy FITPACK `splrep` (0.33–0.38x). Cause: like
-  `make_splrep`, every knot added within a pass re-solves the full problem,
-  where FITPACK's `fpknot` updates the per-interval residual sums
-  incrementally (one solve per pass). Fix: a `Splrep` porting `fpcurf` /
-  `fpknot` (it also places knots like the legacy routine).
-- `RectBivariateSpline` construction (0.84–0.88x). (Its evaluation was
-  0.55–0.72x in the table; it no longer allocates per point and measured at
-  parity on 40 000 points since: `Bicubic.At`/`Ev`.)
-- `np.interp` / linear `interp1d` evaluation (0.86–0.89x), quintic B-spline
-  evaluation (0.92–0.97x), not-a-knot cubic construction from 10^5 points
-  (0.92x: the `dgtsv` division chain SciPy also runs).
+**Open defects — at parity or slower than the reference:**
+- Quintic `make_interp_spline` construction at 10^4 points (0.99x, parity
+  within noise; 1.03–1.35x at the other sizes).
+- From the 2026-10-19 rows not re-measured: `RegularGridInterpolator` linear
+  evaluation at 10^3–10^4 points (0.95–0.98x) and shuffled-query cubic
+  evaluation at 10^4 points (0.94x).
 
 ## Gaps
 
@@ -128,5 +140,9 @@ interp1d, `make_splrep` (2x), least-squares splines (3–1700x) and every
 BSD-3-Clause. The smoothing spline follows Dierckx's algorithm; its structure
 was checked against SciPy's `_fitpack_repro.py` (BSD-3-Clause, Copyright (c)
 2001-2002 Enthought, Inc., 2003-2026 SciPy Developers), which this code ports in
-Go. No GPL or LGPL code is read or ported; Octave and MATLAB are only compared
+Go. `Splrep` ports FITPACK's `curfit`, `fpcurf`, `fpknot`, `fpback`, `fpgivs`,
+`fpdisc` and `fprati` (P. Dierckx) from SciPy 1.18.1's C translation
+`scipy/interpolate/src/dfitpack.c`, distributed under SciPy's BSD-3-Clause
+licence (Copyright (c) 2001-2002 Enthought, Inc., 2003-2026 SciPy Developers).
+No GPL or LGPL code is read or ported; Octave and MATLAB are only compared
 against.

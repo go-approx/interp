@@ -1,6 +1,9 @@
 package interp
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func benchData(n int) (x, y, xq []float64) { return perfDataPlain(n) }
 
@@ -34,6 +37,30 @@ func BenchmarkBSplineEval(b *testing.B) {
 	}
 }
 
+func BenchmarkBSpline5Eval(b *testing.B) {
+	x, y, xq := benchData(100000)
+	s, _ := MakeInterpSpline(x, y, 5, nil)
+	out := make([]float64, len(xq))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.EvalAll(out, xq)
+	}
+}
+
+func BenchmarkBicubicConstruct(b *testing.B) {
+	xs := sortedX(nil, 200, 0, 10, false)
+	z := make([]float64, 200*200)
+	for i := range z {
+		z[i] = math.Sin(float64(i))
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := NewBicubic(xs, xs, z, 3, 3); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkPPolyEval(b *testing.B) {
 	x, y, xq := benchData(100000)
 	p, _ := NewCubicSpline(x, y, "not-a-knot")
@@ -41,6 +68,16 @@ func BenchmarkPPolyEval(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		p.EvalAll(out, xq)
+	}
+}
+
+func BenchmarkSplrepLegacy(b *testing.B) {
+	x, y, _ := benchData(100000)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := Splrep(x, y, 3, 100, nil); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
