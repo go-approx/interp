@@ -107,23 +107,23 @@ same maths, not against Octave.
 points, Go against SciPy on one core, interleaved rounds, with the load average
 of the host. It states the load it was taken at; the host is shared.
 
-Measured 2026-10-19 (load 3–5): faster than SciPy on PCHIP, Akima/makima,
-cubic evaluation, periodic cubic construction (1.4–4.7x), nearest-neighbour
-interp1d, `make_splrep` (2x), least-squares splines (3–1700x) and every
-`RegularGridInterpolator` construction (13–107x).
+Measured 2026-10-19 (load 3–5) and, for the rows the second performance pass
+touched, 2026-10-21 (load 5–7): faster than SciPy on PCHIP, Akima/makima,
+cubic construction (1.3–4x) and evaluation (2–2.7x), periodic cubic
+construction (1.4–4.7x), B-spline evaluation (cubic 1.75–3.6x, quintic
+1.95–2.4x), `numpy.interp` (1.2–2x) and linear `interp1d` (1.4–2.5x),
+nearest-neighbour interp1d, `make_splrep` (2x), the legacy `splrep` with
+`Splrep` (2.8–2.9x), least-squares splines (3–1700x), every
+`RegularGridInterpolator` construction (13–107x) and `RectBivariateSpline`
+construction (2.1–2.5x) and evaluation (1.6–2.6x, measured under a load of
+34; the ratios matched a run at load 10).
 
-**Open defects — still slower than the reference:**
-- `splrep` against SciPy's legacy FITPACK `splrep` (0.33–0.38x). Cause: like
-  `make_splrep`, every knot added within a pass re-solves the full problem,
-  where FITPACK's `fpknot` updates the per-interval residual sums
-  incrementally (one solve per pass). Fix: a `Splrep` porting `fpcurf` /
-  `fpknot` (it also places knots like the legacy routine).
-- `RectBivariateSpline` construction (0.84–0.88x). (Its evaluation was
-  0.55–0.72x in the table; it no longer allocates per point and measured at
-  parity on 40 000 points since: `Bicubic.At`/`Ev`.)
-- `np.interp` / linear `interp1d` evaluation (0.86–0.89x), quintic B-spline
-  evaluation (0.92–0.97x), not-a-knot cubic construction from 10^5 points
-  (0.92x: the `dgtsv` division chain SciPy also runs).
+**Open defects — at parity or slower than the reference:**
+- Quintic `make_interp_spline` construction at 10^4 points (0.99x, parity
+  within noise; 1.03–1.35x at the other sizes).
+- From the 2026-10-19 rows not re-measured: `RegularGridInterpolator` linear
+  evaluation at 10^3–10^4 points (0.95–0.98x) and shuffled-query cubic
+  evaluation at 10^4 points (0.94x).
 
 ## Gaps
 
