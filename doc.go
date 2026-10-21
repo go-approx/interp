@@ -17,7 +17,9 @@
 //     periodic ([MakeInterpSpline]), weighted least squares on given knots
 //     ([MakeLsqSpline]) and the design matrix ([NewDesignMatrix]).
 //   - Smoothing splines with automatic knot placement, the problem of
-//     FITPACK's curfit / splrep / UnivariateSpline ([MakeSplrep]).
+//     FITPACK's curfit / splrep / UnivariateSpline: [MakeSplrep] as
+//     scipy make_splrep solves it, [Splrep] as the legacy FITPACK routine
+//     places the knots (a port of fpcurf / fpknot).
 //   - Rectilinear grids in any dimension: [RGI] (scipy RegularGridInterpolator) methods
 //     linear, nearest, slinear, cubic and quintic ([NewRGI], [Interpn]),
 //     tensor-product splines ([MakeNdInterp]) and bicubic interpolation on a

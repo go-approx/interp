@@ -394,6 +394,35 @@ func Interpn(axes [][]float64, values []float64, xi []float64, method string, o 
 // the grid x[i], y[j].
 type Bicubic struct {
 	s *NdBSpline
+	// gx, gy guess the knot interval of a coordinate from its position in
+	// the base interval (intervals per unit length); see guessInterval.
+	gx, gy float64
+}
+
+// guessInterval is findKnotInterval for x inside [t[k], t[n]) found from a
+// proportional guess g*(x - t[k]) corrected by a few steps — a handful of
+// well-predicted compares on the nearly uniform grids of interpolation,
+// where a bisection of scattered queries mispredicts at every level. The
+// interval with t[l] <= x < t[l+1] is unique, so the answer is
+// findKnotInterval's; anything else (x outside, NaN, the right end, a guess
+// too far off) is handed to findKnotInterval itself.
+func guessInterval(t []float64, k int, x, g float64) int {
+	n := len(t) - k - 1
+	if x >= t[k] && x < t[n] {
+		l := k + int((x-t[k])*g)
+		l = min(max(l, k), n-1)
+		for step := 0; step < 4; step++ {
+			switch {
+			case x < t[l]:
+				l--
+			case x >= t[l+1]:
+				l++
+			default:
+				return l
+			}
+		}
+	}
+	return findKnotInterval(t, k, x, k)
 }
 
 // NewBicubic builds the interpolant; kx = ky = 3 is the bicubic spline (also
@@ -403,7 +432,12 @@ func NewBicubic(x, y, z []float64, kx, ky int) (*Bicubic, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Bicubic{s: s}, nil
+	g := func(d int) float64 {
+		t, k := s.T[d], s.K[d]
+		n := len(t) - k - 1
+		return float64(n-k) / (t[n] - t[k])
+	}
+	return &Bicubic{s: s, gx: g(0), gy: g(1)}, nil
 }
 
 // clamp moves a coordinate into the knot range, as FITPACK's bispev does:
@@ -435,9 +469,12 @@ func (b *Bicubic) Deriv(x, y float64, dx, dy int) float64 {
 	// The two-dimensional case of NdBSpline.EvalNu without its slices and
 	// recursion: the same basis values, the same sums in the same order with
 	// the same roundings, so the same bits.
+	ex := guessInterval(s.T[0], kx, x, b.gx)
+	ey := guessInterval(s.T[1], ky, y, b.gy)
+	if kx == 3 && ky == 3 && dx == 0 && dy == 0 {
+		return bicubicAt(s.T[0], s.T[1], s.C, s.Shape[1], x, y, ex, ey)
+	}
 	var hx, hy [maxStackK]float64
-	ex := findKnotInterval(s.T[0], kx, x, kx)
-	ey := findKnotInterval(s.T[1], ky, y, ky)
 	if dx <= kx {
 		basis(s.T[0], x, kx, ex, dx, hx[:kx+1])
 	}
@@ -457,6 +494,47 @@ func (b *Bicubic) Deriv(x, y float64, dx, dy int) float64 {
 		}
 		sum += float64(hx[a] * inner)
 	}
+	return sum
+}
+
+// cubicBasis is basis(t, x, 3, ell, 0, h) unrolled into scalars, with the
+// same operations in the same order (see evalUnrolled).
+func cubicBasis(t []float64, x float64, ell int) (h0, h1, h2, h3 float64) {
+	l1, r1 := deBoorStep(1, t[ell+1], t[ell], x)
+	h0, h1 = 0+l1, r1
+	la, ra := deBoorStep(h0, t[ell+1], t[ell-1], x)
+	lb, rb := deBoorStep(h1, t[ell+2], t[ell], x)
+	h0, h1, h2 = 0+la, ra+lb, rb
+	la, ra = deBoorStep(h0, t[ell+1], t[ell-2], x)
+	lb, rb = deBoorStep(h1, t[ell+2], t[ell-1], x)
+	lc, rc := deBoorStep(h2, t[ell+3], t[ell], x)
+	return 0 + la, ra + lb, rb + lc, rc
+}
+
+// bicubicAt is Deriv's sum for kx = ky = 3 and no derivative, unrolled: the
+// same basis values and the same sums in the same order (zero x-weights
+// skipped), so the same bits.
+func bicubicAt(tx, ty, c []float64, ny int, x, y float64, ex, ey int) float64 {
+	x0, x1, x2, x3 := cubicBasis(tx, x, ex)
+	y0, y1, y2, y3 := cubicBasis(ty, y, ey)
+	row := func(a int, hx float64, sum float64) float64 {
+		if hx == 0 {
+			return sum
+		}
+		r := c[(ex-3+a)*ny+ey-3:]
+		r = r[:4:4]
+		inner := 0.0
+		inner += float64(r[0] * y0)
+		inner += float64(r[1] * y1)
+		inner += float64(r[2] * y2)
+		inner += float64(r[3] * y3)
+		return sum + float64(hx*inner)
+	}
+	sum := 0.0
+	sum = row(0, x0, sum)
+	sum = row(1, x1, sum)
+	sum = row(2, x2, sum)
+	sum = row(3, x3, sum)
 	return sum
 }
 

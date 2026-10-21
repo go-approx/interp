@@ -393,6 +393,13 @@ func fpcurf(x, y, w []float64, xb, xe float64, k int, s float64, nest int) *Smoo
 	nmin, nmax := 2*k1, m+k1
 	acc := tol * s
 	t := make([]float64, nest)
+	for i := range t {
+		// fpknot's error exit (no interval left with data points inside)
+		// grows n without placing a knot, and its shift can then move a slot
+		// FITPACK never wrote into the interior: undefined values in
+		// FITPACK, xe here, which keeps the knot vector sorted.
+		t[i] = xe
+	}
 	c := make([]float64, nest)
 	z := make([]float64, nest)
 	fpint := make([]float64, nest)

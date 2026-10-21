@@ -54,6 +54,38 @@ func TestSplrepLegacyFixture(t *testing.T) {
 	st.within(t, "splrep (fpcurf port)", 1<<62, 1e-9)
 }
 
+// FuzzSplrep: no input makes Splrep panic or return a spline whose knot
+// vector is not sorted or whose coefficient count does not match it.
+func FuzzSplrep(f *testing.F) {
+	f.Add([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, uint8(3), 0.5)
+	f.Add([]byte{0, 0, 0, 0, 0, 9, 9, 9}, uint8(1), 0.0)
+	f.Add([]byte{5, 1, 200, 3, 3, 3, 3, 7, 250, 0, 13}, uint8(5), 1e-9)
+	f.Fuzz(func(t *testing.T, data []byte, k uint8, s float64) {
+		m := len(data) / 2
+		x := make([]float64, m)
+		y := make([]float64, m)
+		acc := 0.0
+		for i := 0; i < m; i++ {
+			acc += float64(data[2*i] % 4) // repeated abscissae included
+			x[i] = acc
+			y[i] = float64(int8(data[2*i+1]))
+		}
+		sm, err := Splrep(x, y, int(k%7), s, nil)
+		if err != nil {
+			return
+		}
+		b := sm.Spline
+		if len(b.C) != len(b.T)-b.K-1 {
+			t.Fatalf("%d coefficients for %d knots, k=%d", len(b.C), len(b.T), b.K)
+		}
+		for i := 1; i < len(b.T); i++ {
+			if b.T[i] < b.T[i-1] {
+				t.Fatalf("knots not sorted: %v", b.T)
+			}
+		}
+	})
+}
+
 // TestFitpackRoot drives the part-2 iteration through each of its branches
 // with synthetic f(p).
 func TestFitpackRoot(t *testing.T) {
