@@ -303,6 +303,8 @@ func (r *RGI) Eval(dst, xi []float64) error {
 	}
 	if r.spline != nil {
 		r.spline.EvalNu(dst, xi, nil)
+	} else if nd == 2 && r.method == "linear" {
+		r.evalLinear2D(dst, xi)
 	} else {
 		r.evalLinearNearest(dst, xi)
 	}
@@ -314,6 +316,77 @@ func (r *RGI) Eval(dst, xi []float64) error {
 		}
 	}
 	return nil
+}
+
+// axisGuess is the number of grid intervals per unit length of axis g, or 0
+// when that ratio does not fit a float (then no guess is made).
+func axisGuess(g []float64) float64 {
+	n := len(g)
+	s := float64(n-1) / (g[n-1] - g[0])
+	if !(s > 0 && s < math.Inf(1)) {
+		return 0
+	}
+	return s
+}
+
+// axisInterval is the interval evalLinearNearest uses on axis g for x (not
+// NaN): sort.SearchFloat64s(g, x)-1 clamped to [0, len(g)-2], that is the
+// i with g[i] < x <= g[i+1] inside the axis. It looks first at the
+// proportional position x would have on a uniform axis (s intervals per
+// unit length) and bisects only when a few steps do not reach it.
+func axisInterval(g []float64, x, s float64) int {
+	n := len(g)
+	if !(x > g[0]) {
+		return 0
+	}
+	if x > g[n-1] {
+		return n - 2
+	}
+	i := min(max(int((x-g[0])*s), 0), n-2)
+	for step := 0; step < 4; step++ {
+		switch {
+		case !(g[i] < x):
+			i--
+		case !(x <= g[i+1]):
+			i++
+		default:
+			return i
+		}
+	}
+	return sort.SearchFloat64s(g, x) - 1
+}
+
+// evalLinear2D is evalLinearNearest for linear interpolation on two axes,
+// unrolled: the same interval, the same normalised distances and the same
+// weighted sum in the same order (corners 00, 01, 10, 11; each weight
+// built as 1*(1-t)*(1-u) and so on), so the same bits.
+func (r *RGI) evalLinear2D(dst, xi []float64) {
+	g0, g1 := r.axes[0], r.axes[1]
+	s0, s1 := axisGuess(g0), axisGuess(g1)
+	n1 := r.shape[1]
+	v := r.values
+	xi = xi[:2*len(dst)]
+	for p := range dst {
+		x0, x1 := xi[2*p], xi[2*p+1]
+		if x0 != x0 || x1 != x1 {
+			dst[p] = math.NaN()
+			continue
+		}
+		i0 := axisInterval(g0, x0, s0)
+		i1 := axisInterval(g1, x1, s1)
+		t := (x0 - g0[i0]) / (g0[i0+1] - g0[i0])
+		u := (x1 - g1[i1]) / (g1[i1+1] - g1[i1])
+		lo := v[i0*n1+i1 : i0*n1+i1+2 : i0*n1+i1+2]
+		hi := v[(i0+1)*n1+i1 : (i0+1)*n1+i1+2 : (i0+1)*n1+i1+2]
+		w0 := float64(1 * (1 - t))
+		w1 := float64(1 * t)
+		value := 0.0
+		value += float64(lo[0] * float64(w0*(1-u)))
+		value += float64(lo[1] * float64(w0*u))
+		value += float64(hi[0] * float64(w1*(1-u)))
+		value += float64(hi[1] * float64(w1*u))
+		dst[p] = value
+	}
 }
 
 func (r *RGI) evalLinearNearest(dst, xi []float64) {

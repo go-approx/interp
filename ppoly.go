@@ -75,8 +75,13 @@ func (p *PPoly) Coef(i, power int) float64 { return p.C[i*p.K+power] }
 
 // findInterval is scipy's find_interval_ascending: the piece holding xv,
 // starting the search at hint. It returns -1 for NaN and, without
-// extrapolation, for points outside [x[0], x[n]].
-func findInterval(x []float64, xv float64, hint int, extrap bool) int {
+// extrapolation, for points outside [x[0], x[n]]. g, when positive, is the
+// number of pieces per unit length: a query that is not in or next to the
+// hinted piece is then looked for first at its proportional position (a few
+// well-predicted compares on nearly uniform breakpoints, where a bisection
+// of shuffled queries mispredicts at every level). The piece with
+// x[i] <= xv < x[i+1] is unique, so the answer does not depend on g.
+func findInterval(x []float64, xv float64, hint int, extrap bool, g float64) int {
 	nx := len(x)
 	a, b := x[0], x[nx-1]
 	if !(a <= xv && xv <= b) {
@@ -103,6 +108,19 @@ func findInterval(x []float64, xv float64, hint int, extrap bool) int {
 		lo = hint + 2
 	} else {
 		hi = hint
+	}
+	if g > 0 {
+		i := min(max(int((xv-a)*g), lo), hi-1)
+		for step := 0; step < 4; step++ {
+			switch {
+			case xv < x[i]:
+				i--
+			case xv >= x[i+1]:
+				i++
+			default:
+				return i
+			}
+		}
 	}
 	for hi-lo > 1 {
 		mid := int(uint(lo+hi) >> 1)
@@ -193,11 +211,16 @@ func (p *PPoly) wrap(xv float64) float64 {
 func (p *PPoly) EvalNu(dst, xs []float64, nu int) {
 	hint := 0
 	extrap := p.Extrap == Extend
+	last := len(p.X) - 1
+	g := float64(last) / (p.X[last] - p.X[0]) // pieces per unit length
+	if !(g > 0 && g < math.Inf(1)) {
+		g = 0 // no guess (overflowing span or ratio)
+	}
 	for j, xv := range xs {
 		if p.Extrap == Wrap {
 			xv = p.wrap(xv)
 		}
-		i := findInterval(p.X, xv, hint, extrap || p.Extrap == Wrap)
+		i := findInterval(p.X, xv, hint, extrap || p.Extrap == Wrap, g)
 		if i < 0 {
 			dst[j] = math.NaN()
 			continue
@@ -302,8 +325,8 @@ func (p *PPoly) Integrate(a, b float64) float64 {
 }
 
 func (p *PPoly) integrateBase(a, b float64, extrap bool) float64 {
-	si := findInterval(p.X, a, 0, extrap)
-	ei := findInterval(p.X, b, 0, extrap)
+	si := findInterval(p.X, a, 0, extrap, 0)
+	ei := findInterval(p.X, b, 0, extrap, 0)
 	if si < 0 || ei < 0 {
 		return math.NaN()
 	}
