@@ -3,7 +3,7 @@
 Interpolation, splines and smoothing in pure Go (`CGO_ENABLED=0`), validated
 against SciPy and NumPy.
 
-**Documentation:** <https://go-approx.github.io/docs/interp/> ·
+**Documentation:** <https://go-approx.github.io/docs/latest/interp/> ·
 **Landing:** <https://go-approx.github.io/> ·
 **Organisation:** [go-approx](https://github.com/go-approx)
 
