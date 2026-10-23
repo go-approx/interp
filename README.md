@@ -116,14 +116,17 @@ nearest-neighbour interp1d, `make_splrep` (2x), the legacy `splrep` with
 `Splrep` (2.8–2.9x), least-squares splines (3–1700x), every
 `RegularGridInterpolator` construction (13–107x) and `RectBivariateSpline`
 construction (2.1–2.5x) and evaluation (1.6–2.6x, measured under a load of
-34; the ratios matched a run at load 10).
+34; the ratios matched a run at load 10). Measured 2026-10-22 (load 7.4–8)
+after the third pass: `RegularGridInterpolator` linear evaluation (7–10x)
+and cubic evaluation of shuffled queries (3.3–9.2x). Interval searches that
+miss the hinted interval first try the position the query would have on a
+uniform grid, which is right after a few well-predicted compares on the
+nearly uniform grids of interpolation; the interval is unique, so the
+results are bit-identical to the bisection's.
 
 **Open defects — at parity or slower than the reference:**
 - Quintic `make_interp_spline` construction at 10^4 points (0.99x, parity
   within noise; 1.03–1.35x at the other sizes).
-- From the 2026-10-19 rows not re-measured: `RegularGridInterpolator` linear
-  evaluation at 10^3–10^4 points (0.95–0.98x) and shuffled-query cubic
-  evaluation at 10^4 points (0.94x).
 
 ## Gaps
 

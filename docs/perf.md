@@ -4,7 +4,7 @@ Measured 2026-10-19 on darwin/arm64, go1.27.2, **one core on each side** (Go is 
 SciPy 1.18.1, NumPy 2.5.4. Rounds are interleaved (Go, SciPy, Go, SciPy, ...), each round timing the mean of several repetitions; the table shows the median of 5-7 rounds.
 The host is shared and was loaded (the load average column is the median of `uptime` before each round), so absolute times are inflated and noisy; ratios of interleaved rounds are the meaningful figure. Ratio = SciPy time / Go time, so a ratio above 1 means Go is faster.
 
-The rows `cubic-nak`, `bspline3`, `bspline5`, `interp1d-linear`, `np.interp`, `splrep` and `rbs` construct were re-measured on 2026-10-21 (load 5–7) after the second performance pass; `rbs` eval was re-measured the same day under a load of 34–37 (above the threshold of 8 below which ratios are trusted; the ratios agreed with a run at load 10–11). The `splrep` "legacy" rows now time `Splrep` (the `fpcurf`/`fpknot` port) against SciPy's legacy `splrep`; the plain `construct` rows time `MakeSplrep` against `make_splrep`.
+The rows `cubic-nak`, `bspline3`, `bspline5`, `interp1d-linear`, `np.interp`, `splrep` and `rbs` construct were re-measured on 2026-10-21 (load 5–7) after the second performance pass; `rbs` eval was re-measured the same day under a load of 34–37 (above the threshold of 8 below which ratios are trusted; the ratios agreed with a run at load 10–11). The `splrep` "legacy" rows now time `Splrep` (the `fpcurf`/`fpknot` port) against SciPy's legacy `splrep`; the plain `construct` rows time `MakeSplrep` against `make_splrep`. The `cubic-nak-shuffled` and `rgi-linear` rows were re-measured on 2026-10-22 after the third pass (proportional interval guess); the run started at load 7.4 and the per-round median is reported as 8.
 
 Data: n jittered nodes on [0, 10], a smooth noisy signal, n sorted uniform queries (the 2-D rows use a sqrt(n) x sqrt(n) grid and n scattered queries; `splrep` uses s = 1e-3 n).
 
@@ -18,10 +18,10 @@ Data: n jittered nodes on [0, 10], a smooth noisy signal, n sorted uniform queri
 | cubic-nak | eval | 100000 | 0.00148 | 0.00297 | 2.00 | 5 |
 | cubic-nak | construct | 1000000 | 0.0144 | 0.0188 | 1.30 | 5 |
 | cubic-nak | eval | 1000000 | 0.0161 | 0.0326 | 2.02 | 5 |
-| cubic-nak-shuffled | eval | 1000 | 1.61e-05 | 2.71e-05 | 1.69 | 3 |
-| cubic-nak-shuffled | eval | 10000 | 0.000648 | 0.000612 | 0.94 | 3 |
-| cubic-nak-shuffled | eval | 100000 | 0.0148 | 0.0155 | 1.04 | 3 |
-| cubic-nak-shuffled | eval | 1000000 | 0.207 | 0.215 | 1.04 | 3 |
+| cubic-nak-shuffled | eval | 1000 | 8.22e-06 | 2.7e-05 | 3.28 | 8 |
+| cubic-nak-shuffled | eval | 10000 | 0.000104 | 0.000611 | 5.86 | 8 |
+| cubic-nak-shuffled | eval | 100000 | 0.00167 | 0.0154 | 9.23 | 8 |
+| cubic-nak-shuffled | eval | 1000000 | 0.0244 | 0.217 | 8.90 | 8 |
 | cubic-periodic | construct | 1000 | 3e-05 | 0.000141 | 4.70 | 3 |
 | cubic-periodic | construct | 10000 | 0.000272 | 0.000486 | 1.79 | 3 |
 | cubic-periodic | construct | 100000 | 0.00241 | 0.00348 | 1.44 | 3 |
@@ -92,12 +92,12 @@ Data: n jittered nodes on [0, 10], a smooth noisy signal, n sorted uniform queri
 | lsq | construct | 10000 | 0.000994 | 0.0185 | 18.58 | 4 |
 | lsq | construct | 100000 | 0.00988 | 1.69 | 171.46 | 4 |
 | lsq | construct | 1000000 | 0.0982 | 169 | 1720.01 | 4 |
-| rgi-linear | construct | 1000 | 3.75e-07 | 9.71e-06 | 25.89 | 4 |
-| rgi-linear | eval | 1000 | 7.69e-05 | 7.33e-05 | 0.95 | 4 |
-| rgi-linear | construct | 10000 | 5.42e-07 | 9.62e-06 | 17.76 | 4 |
-| rgi-linear | eval | 10000 | 0.000925 | 0.000906 | 0.98 | 4 |
-| rgi-linear | construct | 40000 | 7.5e-07 | 1.01e-05 | 13.50 | 4 |
-| rgi-linear | eval | 40000 | 0.00422 | 0.00445 | 1.06 | 4 |
+| rgi-linear | construct | 1000 | 3.75e-07 | 9.67e-06 | 25.78 | 8 |
+| rgi-linear | eval | 1000 | 1.05e-05 | 7.28e-05 | 6.96 | 8 |
+| rgi-linear | construct | 10000 | 5e-07 | 9.63e-06 | 19.25 | 8 |
+| rgi-linear | eval | 10000 | 0.000105 | 0.000885 | 8.42 | 8 |
+| rgi-linear | construct | 40000 | 7.08e-07 | 9.96e-06 | 14.07 | 8 |
+| rgi-linear | eval | 40000 | 0.000426 | 0.0043 | 10.09 | 8 |
 | rgi-nearest | construct | 1000 | 2.92e-07 | 9.67e-06 | 33.11 | 4 |
 | rgi-nearest | eval | 1000 | 5.48e-05 | 8.93e-05 | 1.63 | 4 |
 | rgi-nearest | construct | 10000 | 5e-07 | 9.75e-06 | 19.50 | 4 |
