@@ -103,30 +103,21 @@ same maths, not against Octave.
 
 ## Performance
 
-`docs/perf.md` has the table: construction and evaluation at 10^3 to 10^6
-points, Go against SciPy on one core, interleaved rounds, with the load average
-of the host. It states the load it was taken at; the host is shared.
+`docs/perf.md` describes the comparison with SciPy 1.18.1 under
+[refbench](https://github.com/go-scikit/refbench) v0.1.2 (`bench/`): one case
+per public function, one core on both sides, interleaved rounds, the same data
+on both sides (SHA-256 of the inputs) and the same number of knots in the
+smoothing fits, refused at a 1-minute load of 8 or more. The table
+(`docs/perf-table.md`) records the allocation count of every case; its timings
+are deferred until the host is idle. `BSpline.Integrate` no longer builds the
+antiderivative (3 allocations and two arrays of the size of the spline per
+call, now none), with the same bits.
 
-Measured 2026-10-19 (load 3–5) and, for the rows the second performance pass
-touched, 2026-10-21 (load 5–7): faster than SciPy on PCHIP, Akima/makima,
-cubic construction (1.3–4x) and evaluation (2–2.7x), periodic cubic
-construction (1.4–4.7x), B-spline evaluation (cubic 1.75–3.6x, quintic
-1.95–2.4x), `numpy.interp` (1.2–2x) and linear `interp1d` (1.4–2.5x),
-nearest-neighbour interp1d, `make_splrep` (2x), the legacy `splrep` with
-`Splrep` (2.8–2.9x), least-squares splines (3–1700x), every
-`RegularGridInterpolator` construction (13–107x) and `RectBivariateSpline`
-construction (2.1–2.5x) and evaluation (1.6–2.6x, measured under a load of
-34; the ratios matched a run at load 10). Measured 2026-10-22 (load 7.4–8)
-after the third pass: `RegularGridInterpolator` linear evaluation (7–10x)
-and cubic evaluation of shuffled queries (3.3–9.2x). Interval searches that
-miss the hinted interval first try the position the query would have on a
-uniform grid, which is right after a few well-predicted compares on the
-nearly uniform grids of interpolation; the interval is unique, so the
-results are bit-identical to the bisection's.
-
-**Open defects — at parity or slower than the reference:**
-- Quintic `make_interp_spline` construction at 10^4 points (0.99x, parity
-  within noise; 1.03–1.35x at the other sizes).
+The measurements of October 2026 (the package's own harness, 10^3 to 10^6
+points, several rows taken at a load above 8) are kept in
+`docs/perf-legacy.md`; they carry no verdict. Its one open defect, quintic
+`make_interp_spline` construction at parity with SciPy (0.99x to 1.35x), stays
+open until the refbench timings replace it.
 
 ## Gaps
 

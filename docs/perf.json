@@ -1,0 +1,936 @@
+{
+  "schema": 1,
+  "status": "deferred",
+  "date": "2026-11-08T14:22:10+01:00",
+  "commit": "",
+  "repo": "go-approx/interp",
+  "go_version": "go1.27.3",
+  "machine": "darwin/arm64, 16 CPUs",
+  "max_load": 8,
+  "load": {
+    "min": 0,
+    "median": 0,
+    "max": 0
+  },
+  "valid": true,
+  "rows": [
+    {
+      "name": "NewCubicSpline not-a-knot",
+      "func": "NewCubicSpline",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline",
+      "parity": "tolerance",
+      "allocs": 6,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewCubicSpline natural",
+      "func": "NewCubicSpline",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline",
+      "parity": "tolerance",
+      "allocs": 6,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewCubicSpline clamped",
+      "func": "NewCubicSpline",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline",
+      "parity": "tolerance",
+      "allocs": 6,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewCubicSplineBC D1,D2",
+      "func": "NewCubicSplineBC",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline bc_type=((1,.5),(2,.25))",
+      "parity": "tolerance",
+      "allocs": 6,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewCubicHermite",
+      "func": "NewCubicHermite",
+      "reference": "scipy 1.18.1 interpolate.CubicHermiteSpline",
+      "parity": "exact",
+      "allocs": 3,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewPchip",
+      "func": "NewPchip",
+      "reference": "scipy 1.18.1 interpolate.PchipInterpolator",
+      "parity": "tolerance",
+      "allocs": 5,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewAkima",
+      "func": "NewAkima",
+      "reference": "scipy 1.18.1 interpolate.Akima1DInterpolator",
+      "parity": "tolerance",
+      "allocs": 8,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewAkima makima",
+      "func": "NewAkima",
+      "reference": "scipy 1.18.1 interpolate.Akima1DInterpolator method=makima",
+      "parity": "tolerance",
+      "allocs": 8,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "PPoly.EvalNu",
+      "func": "PPoly.EvalNu",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline.__call__(q, 1)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "PPoly.EvalAll",
+      "func": "PPoly.EvalAll",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline.__call__(q)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "PPoly.At",
+      "func": "PPoly.At",
+      "reference": "scipy 1.18.1 interpolate.CubicSpline.__call__(0.37)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "PPoly.Derivative",
+      "func": "PPoly.Derivative",
+      "reference": "scipy 1.18.1 interpolate.PPoly.derivative",
+      "parity": "exact",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "PPoly.Antiderivative",
+      "func": "PPoly.Antiderivative",
+      "reference": "scipy 1.18.1 interpolate.PPoly.antiderivative",
+      "parity": "exact",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "PPoly.Integrate",
+      "func": "PPoly.Integrate",
+      "reference": "scipy 1.18.1 interpolate.PPoly.integrate",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewPPoly",
+      "func": "NewPPoly",
+      "reference": "scipy 1.18.1 interpolate.PPoly",
+      "parity": "exact",
+      "allocs": 1,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewBSpline",
+      "func": "NewBSpline",
+      "reference": "scipy 1.18.1 interpolate.BSpline",
+      "parity": "exact",
+      "allocs": 1,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "BSpline.EvalNu",
+      "func": "BSpline.EvalNu",
+      "reference": "scipy 1.18.1 interpolate.BSpline.__call__(q, nu=1)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "BSpline.EvalAll",
+      "func": "BSpline.EvalAll",
+      "reference": "scipy 1.18.1 interpolate.BSpline.__call__(q)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "BSpline.At",
+      "func": "BSpline.At",
+      "reference": "scipy 1.18.1 interpolate.BSpline.__call__(0.37)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "BSpline.Derivative",
+      "func": "BSpline.Derivative",
+      "reference": "scipy 1.18.1 interpolate.BSpline.derivative",
+      "parity": "exact",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "BSpline.Antiderivative",
+      "func": "BSpline.Antiderivative",
+      "reference": "scipy 1.18.1 interpolate.BSpline.antiderivative",
+      "parity": "exact",
+      "allocs": 3,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "BSpline.Integrate",
+      "func": "BSpline.Integrate",
+      "reference": "scipy 1.18.1 interpolate.BSpline.integrate",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewDesignMatrix",
+      "func": "NewDesignMatrix",
+      "reference": "scipy 1.18.1 interpolate.BSpline.design_matrix",
+      "parity": "tolerance",
+      "allocs": 3,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "DesignMatrix.Dense",
+      "func": "DesignMatrix.Dense",
+      "reference": "scipy 1.18.1 interpolate.design_matrix(...).toarray",
+      "parity": "exact",
+      "allocs": 1,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "MakeInterpSpline k=3",
+      "func": "MakeInterpSpline",
+      "reference": "scipy 1.18.1 interpolate.make_interp_spline(k=3)",
+      "parity": "tolerance",
+      "allocs": 7,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "MakeInterpSpline k=5",
+      "func": "MakeInterpSpline",
+      "reference": "scipy 1.18.1 interpolate.make_interp_spline(k=5)",
+      "parity": "tolerance",
+      "allocs": 8,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "MakeLsqSpline",
+      "func": "MakeLsqSpline",
+      "reference": "scipy 1.18.1 interpolate.make_lsq_spline(k=3)",
+      "parity": "tolerance",
+      "allocs": 6,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Splrep",
+      "func": "Splrep",
+      "reference": "scipy 1.18.1 interpolate.splrep(k=3, s)",
+      "parity": "tolerance",
+      "allocs": 12,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "MakeSplrep",
+      "func": "MakeSplrep",
+      "reference": "scipy 1.18.1 interpolate.make_splrep(k=3, s)",
+      "parity": "tolerance",
+      "allocs": 15,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewInterp1D linear",
+      "func": "NewInterp1D",
+      "reference": "scipy 1.18.1 interpolate.interp1d",
+      "parity": "exact",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interp1D.EvalAll linear",
+      "func": "Interp1D.EvalAll",
+      "reference": "scipy 1.18.1 interpolate.interp1d.__call__(q)",
+      "parity": "exact",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interp1D.At",
+      "func": "Interp1D.At",
+      "reference": "scipy 1.18.1 interpolate.interp1d.__call__(0.37)",
+      "parity": "exact",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewInterp1D nearest",
+      "func": "NewInterp1D",
+      "reference": "scipy 1.18.1 interpolate.interp1d",
+      "parity": "exact",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interp1D.EvalAll nearest",
+      "func": "Interp1D.EvalAll",
+      "reference": "scipy 1.18.1 interpolate.interp1d.__call__(q)",
+      "parity": "exact",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interp",
+      "func": "Interp",
+      "reference": "scipy 1.18.1 interpolate.numpy.interp",
+      "parity": "exact",
+      "allocs": 1,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interp1 linear",
+      "func": "Interp1",
+      "reference": "scipy 1.18.1 interpolate.interp1d(q)",
+      "parity": "exact",
+      "allocs": 3,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interp1 pchip",
+      "func": "Interp1",
+      "reference": "scipy 1.18.1 interpolate.PchipInterpolator(q)",
+      "parity": "tolerance",
+      "allocs": 11,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewRGI linear",
+      "func": "NewRGI",
+      "reference": "scipy 1.18.1 interpolate.RegularGridInterpolator linear",
+      "parity": "tolerance",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "RGI.Eval linear",
+      "func": "RGI.Eval",
+      "reference": "scipy 1.18.1 interpolate.RegularGridInterpolator.__call__ linear",
+      "parity": "tolerance",
+      "allocs": 1,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewRGI nearest",
+      "func": "NewRGI",
+      "reference": "scipy 1.18.1 interpolate.RegularGridInterpolator nearest",
+      "parity": "tolerance",
+      "allocs": 2,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "RGI.Eval nearest",
+      "func": "RGI.Eval",
+      "reference": "scipy 1.18.1 interpolate.RegularGridInterpolator.__call__ nearest",
+      "parity": "tolerance",
+      "allocs": 1,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewRGI cubic",
+      "func": "NewRGI",
+      "reference": "scipy 1.18.1 interpolate.RegularGridInterpolator cubic",
+      "parity": "tolerance",
+      "allocs": 24,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "RGI.Eval cubic",
+      "func": "RGI.Eval",
+      "reference": "scipy 1.18.1 interpolate.RegularGridInterpolator.__call__ cubic",
+      "parity": "tolerance",
+      "allocs": 4,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Interpn linear",
+      "func": "Interpn",
+      "reference": "scipy 1.18.1 interpolate.interpn linear",
+      "parity": "tolerance",
+      "allocs": 4,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "MakeNdInterp k=3",
+      "func": "MakeNdInterp",
+      "reference": "scipy 1.18.1 interpolate.make_ndbspl(k=3)",
+      "parity": "tolerance",
+      "allocs": 22,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NdBSpline.EvalNu",
+      "func": "NdBSpline.EvalNu",
+      "reference": "scipy 1.18.1 interpolate.NdBSpline.__call__(xi, nu=(1,0))",
+      "parity": "tolerance",
+      "allocs": 3,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "NewBicubic",
+      "func": "NewBicubic",
+      "reference": "scipy 1.18.1 interpolate.RectBivariateSpline",
+      "parity": "tolerance",
+      "allocs": 23,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Bicubic.Deriv",
+      "func": "Bicubic.Deriv",
+      "reference": "scipy 1.18.1 interpolate.RectBivariateSpline.ev(dx=1)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Bicubic.At",
+      "func": "Bicubic.At",
+      "reference": "scipy 1.18.1 interpolate.RectBivariateSpline.ev",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Bicubic.Ev",
+      "func": "Bicubic.Ev",
+      "reference": "scipy 1.18.1 interpolate.RectBivariateSpline.ev(qx, qy)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    },
+    {
+      "name": "Bicubic.EvalGrid",
+      "func": "Bicubic.EvalGrid",
+      "reference": "scipy 1.18.1 interpolate.RectBivariateSpline(ax, ay, dx=1, dy=1)",
+      "parity": "tolerance",
+      "allocs": 0,
+      "go": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ref": {
+        "median": 0,
+        "q1": 0,
+        "q3": 0
+      },
+      "ratio": 0
+    }
+  ]
+}
