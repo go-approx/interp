@@ -3,7 +3,7 @@ module github.com/go-approx/interp/bench
 go 1.27.3
 
 require (
-	github.com/go-approx/interp v0.0.0
+	github.com/go-approx/interp v0.2.2
 	github.com/go-scikit/refbench v0.1.2
 )
 
