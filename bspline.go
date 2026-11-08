@@ -329,12 +329,18 @@ func (b *BSpline) Integrate(lo, hi float64) float64 {
 	}
 	k, n := b.K, b.N()
 	tb, te := b.T[k], b.T[n]
-	anti := b.Antiderivative(1)
-	diff := func(a, c float64, extrap Extrapolation) float64 {
-		var out [2]float64
-		anti.Extrap = extrap
-		anti.EvalNu(out[:], []float64{a, c}, 0)
-		return out[1] - out[0]
+	var anti *BSpline
+	if k+1 > maxAntiK {
+		anti = b.Antiderivative(1)
+	}
+	diff := func(a, c float64, _ Extrapolation) float64 {
+		if anti != nil {
+			var out [2]float64
+			anti.Extrap = Extend
+			anti.EvalNu(out[:], []float64{a, c}, 0)
+			return out[1] - out[0]
+		}
+		return b.antiAt(c) - b.antiAt(a)
 	}
 	switch b.Extrap {
 	case NaNOutside:
@@ -363,6 +369,54 @@ func (b *BSpline) Integrate(lo, hi float64) float64 {
 		return sign * tot
 	}
 	return sign * diff(lo, hi, Extend)
+}
+
+// maxAntiK bounds the degree of the antiderivative that antiAt evaluates on
+// stack buffers; Integrate builds the antiderivative for a higher degree.
+const maxAntiK = 8
+
+// antiAt is Antiderivative(1) evaluated at x with Extend, without building it.
+// The antiderivative has the knots t[0], t..., t[len-1] and the coefficients
+// 0, S_0/(k+1), S_1/(k+1), ... with S_i the running sum of c[j]*(t[j+k+1]-t[j])
+// (Antiderivative's sums, in its order); at x only the k+2 coefficients of the
+// knot interval of x and the 2k+3 knots around it enter, so a window of each
+// holds what EvalNu reads, and the result is EvalNu's, bit for bit. The
+// interval of x in the antiderivative is the interval of x in b, one further.
+func (b *BSpline) antiAt(x float64) float64 {
+	k, t, c := b.K, b.T, b.C
+	kk := k + 1
+	ell := findKnotInterval(t, k, x, k) // in t; the antiderivative's is ell+1
+	// findKnotInterval steps back over zero-width intervals at the right end
+	// only for k > 0; the antiderivative (degree k+1 > 0) always does.
+	for k == 0 && ell > 0 && t[ell] == t[ell+1] {
+		ell--
+	}
+	// Window knots: wt[m] = t'[ell+1-kk+m], m = 0..2kk, t' the extended knots.
+	var wt [2*maxAntiK + 3]float64
+	for m := 0; m <= 2*kk; m++ {
+		i := ell + 1 - kk + m // index in t'
+		if i <= 0 { // i <= len(t) always: the window ends at ell+1+kk <= len(t)
+			wt[m] = t[0]
+		} else {
+			wt[m] = t[i-1]
+		}
+	}
+	// Window coefficients: wc[a] = c'[ell-k+a], a = 0..kk, c'[0] = 0.
+	var wc [maxAntiK + 2]float64
+	sum := 0.0
+	for i := 0; i <= ell; i++ {
+		sum += float64(c[i] * (t[i+k+1] - t[i]))
+		if j := i + 1 - (ell - k); j >= 0 {
+			wc[j] = sum / float64(k+1)
+		}
+	}
+	var h [maxAntiK + 2]float64
+	basis(wt[:2*kk+1], x, kk, kk, 0, h[:kk+1])
+	s := 0.0
+	for a := 0; a <= kk; a++ {
+		s += float64(wc[a] * h[a])
+	}
+	return s
 }
 
 // DesignMatrix holds the banded collocation matrix of a B-spline basis: row i
